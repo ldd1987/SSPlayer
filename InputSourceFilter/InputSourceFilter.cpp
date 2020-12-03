@@ -137,6 +137,17 @@ DWORD WINAPI  CInputFileSource::ReadFunc(LPVOID arg)
 			}
 
 		}
+		else
+		{
+			if (pThis->m_bAudioFile)
+			{
+				if ((pThis->m_ListAudio.GetTimestampInterval() > 200))
+				{
+					pThis->m_bStartSupportData = true;
+					continue;
+				}
+			}
+		}
 		Sleep(3);
 		QMutexLocker stLock(&pThis->m_Mutex);
 		AVPacket packet;
@@ -327,7 +338,7 @@ void CInputFileSource::SyncAudio()
 
 void CInputFileSource::DecoderVideo()
 {
-	if (!m_bPlay || m_bSeek)
+	if (!m_bPlay || m_bSeek || m_nVideoIndex < 0)
 	{
 		return;
 	}
@@ -352,6 +363,7 @@ void CInputFileSource::DecoderVideo()
 		QMutexLocker stLock(&m_Mutex);
 		bool bempty = false;
 		AVPacket packet;
+		av_init_packet(&packet);
 		{
 			QMutexLocker stLocker(&m_MutexPacketVideo);
 			if (m_deqVideoPacket.size() <= 0)
@@ -385,6 +397,14 @@ void CInputFileSource::DecoderVideo()
 		if (packet.stream_index == m_nVideoIndex)
 		{
 			AVFrame * m_pstDecodedVideoBuffer = av_frame_alloc();
+			if (false == bempty)
+			{
+				int nRet = avcodec_send_packet(m_pstVideoCodecCtx, &packet);
+				if (nRet < 0)
+				{
+
+				}
+			}
 			while (1)
 			{
 				int nRet = avcodec_receive_frame(m_pstVideoCodecCtx, m_pstDecodedVideoBuffer);
@@ -619,14 +639,7 @@ void CInputFileSource::DecoderVideo()
 					}
 				}
 			}
-			if (false == bempty)
-			{
-				int nRet = avcodec_send_packet(m_pstVideoCodecCtx, &packet);
-				if (nRet < 0)
-				{
-					
-				}
-			}
+			
 			
 			if (m_pstDecodedVideoBuffer != NULL)
 			{
