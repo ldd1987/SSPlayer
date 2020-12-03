@@ -2,7 +2,7 @@
 
 #include <QtWidgets/QMainWindow>
 #include "ui_SSPlayer.h"
-class InputSourceFilter;
+class CInputFileSource;
 class VideoRenderFilter;
 class AudioRenderFilter;
 class SSPlayer : public QMainWindow
@@ -21,7 +21,7 @@ private:
 
 	QAction * m_pVedioFileInputAct;
 
-	InputSourceFilter *m_pInputSourceFilter;
+	CInputFileSource *m_pInputSourceFilter;
 	VideoRenderFilter *m_pVideoRenderFilter;
 	AudioRenderFilter *m_pAudioRenderFilter;
 };

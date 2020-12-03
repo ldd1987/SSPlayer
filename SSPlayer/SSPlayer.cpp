@@ -35,7 +35,7 @@ void SSPlayer::ShowContextMenu(const QPoint& pos) // this is a slot
 	{
 		if (m_pInputSourceFilter)
 		{
-			CStreamInfo info = m_pInputSourceFilter->GetStreamInfo();
+			//CStreamInfo info = m_pInputSourceFilter->GetStreamInfo();
 		}
 	}
 	else
@@ -66,15 +66,15 @@ void SSPlayer::SlotOpenFile()
 	{
 		if (m_pInputSourceFilter)
 		{
-			m_pInputSourceFilter->Stop();
+			m_pInputSourceFilter->StopService();
 			delete m_pInputSourceFilter;
 		}
 		CInputSourceParam param;
 		param.m_strFileName = strFileName.toLocal8Bit().toStdString();
-		m_pInputSourceFilter = new InputSourceFilter(param);
+		m_pInputSourceFilter = new CInputFileSource(param);
 		m_pInputSourceFilter->ConnectFilter(m_pVideoRenderFilter);
 		m_pInputSourceFilter->ConnectFilter(m_pAudioRenderFilter);
-		m_pInputSourceFilter->Start();
+		m_pInputSourceFilter->StartService();
 	}
 	else
 	{

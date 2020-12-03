@@ -2,10 +2,11 @@
 matrix worldMatrix;
 matrix viewMatrix : register(b0);
 matrix projectionMatrix;
-Texture2D TextureSource;
-Texture2D TextureCG;
+Texture2D TextureSourceY;
+Texture2D TextureSourceU;
+Texture2D TextureSourceV;
+Texture2D TextureSourceA;
 int PixType;
-int BlendType = 0;
 int sourcewidth;
 int sourceheight;
 SamplerState SamplerDiffuse
@@ -38,54 +39,35 @@ VS_OUTPUT VS(float4 inPos : POSITION, float2 inTexCoord : TEXCOORD)
 	return output;
 }
 
-inline float GetIntOffsetColor(uint offset)
-{
-	return TextureSource.Load(int3(offset % sourcewidth,
-		offset / sourcewidth,
-		0)).r;
-}
-#define PRECISION_OFFSET 0.2
 inline float4 PSPacked422_Reverse(VS_OUTPUT vert_in, uint u_pos, uint v_pos, int y0_pos, uint y1_pos)
 {
-	float y = vert_in.TexCoord.y;
-	float odd = floor(fmod(sourcewidth * vert_in.TexCoord.x + PRECISION_OFFSET, 2.0));
-	float x = floor(sourcewidth / 2 * vert_in.TexCoord.x + PRECISION_OFFSET) * (1.0 / (sourcewidth / 2)); // width_d2_i;
-	x += (1.0 / sourcewidth) / 2;
-	float4 texel = TextureSource.Sample(SamplerDiffuse, float2(x, y));
-	return float4(odd > 0.5 ? texel[y1_pos] : texel[y0_pos],texel[u_pos], texel[v_pos], 1.0);
+	return float4(0, 1, 0, 1.0);
 }
 
 inline float4 PSPlanar420_Reverse(VS_OUTPUT vert_in)
 {
-	uint x = uint(vert_in.TexCoord.x * sourcewidth);
-	uint y = uint(vert_in.TexCoord.y * sourceheight);
+	float y = TextureSourceY.Sample(SamplerDiffuse, vert_in.TexCoord).r;
+	float2 pos = float2(vert_in.TexCoord.x, vert_in.TexCoord.y);
+	float u = TextureSourceU.Sample(SamplerDiffuse,pos).r;
+	float v = TextureSourceV.Sample(SamplerDiffuse, pos).r;
 
-	uint lum_offset = y * sourcewidth + x;
-	uint chroma_offset = (y / 2) * (sourcewidth / 2) + x / 2;
-	uint chroma1 = sourcewidth * sourceheight + chroma_offset;
-	uint chroma2 = sourcewidth *sourceheight*0.25 + chroma1;
+	return float4(y,u,v,1.0);
+}
 
-	return float4(
-		GetIntOffsetColor(lum_offset),
-		GetIntOffsetColor(chroma1),
-		GetIntOffsetColor(chroma2),
-		1.0
-		);
+inline float4 PSPlanar42010_Reverse(VS_OUTPUT vert_in)
+{
+	float2 pos = float2(vert_in.TexCoord.x, vert_in.TexCoord.y);
+	float y = TextureSourceY.Sample(SamplerDiffuse, pos).r * 64;
+	
+	float u = TextureSourceU.Sample(SamplerDiffuse, pos).r * 64;
+	float v = TextureSourceV.Sample(SamplerDiffuse, pos).r * 64;
+
+	return float4(y, u, v, 1.0);
 }
 
 inline float4 PSPlanarRGB_Reverse(VS_OUTPUT vert_in)
 {
-	uint x = uint(vert_in.TexCoord.x * sourcewidth);
-	uint y = uint(vert_in.TexCoord.y * sourceheight);
-
-	uint lum_offset = (y * sourcewidth + x) * 3;
-	uint chroma1 = lum_offset + 1;
-	uint chroma2 = lum_offset + 2;
-	uint nWidth = sourcewidth * 3;
-	float r = TextureSource.Load(int3(lum_offset % nWidth, lum_offset / nWidth, 0)).r;
-	float g = TextureSource.Load(int3(chroma1 % nWidth, chroma1 / nWidth, 0)).r;
-	float b = TextureSource.Load(int3(chroma2 % nWidth, chroma2 / nWidth, 0)).r;
-	return float4(r, g, b, 1.0);
+	return float4(0, 1, 0, 1.0);
 }
 
 float4 bt709yuv = float4(0.0625f, 0.5f, 0.5f, 0.0f);
@@ -134,7 +116,7 @@ inline float4 GetRGBA(VS_OUTPUT input)
 	}
 	else if (1 == PixType) // bgra
 	{
-		float4 rgba = TextureSource.Sample(SamplerDiffuse, input.TexCoord);
+		float4 rgba = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord);
 		return rgba;
 	}
 	else if (4 == PixType) // bgra
@@ -144,8 +126,16 @@ inline float4 GetRGBA(VS_OUTPUT input)
 	}
 	else if (7 == PixType)
 	{
-		float4 rgba = TextureSource.Sample(SamplerDiffuse, input.TexCoord);
+		float4 rgba = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord);
 		return rgba;
+	}
+	else if (8 == PixType)
+	{
+		float4 rgba = PSPlanar42010_Reverse(input);
+		float4 rgbasub = rgba - bt709yuv;
+		float4 rgbarsp = mul(rgbasub, bt709matrix);
+		rgbarsp.a = 1;
+		return rgbarsp;
 	}
 	else
 	{

@@ -26,6 +26,7 @@ enum PixType
 	eYVYU422,
 	eUYVY422,
 	eYUYV422,
+	eYUV420P10,
 
 };
 

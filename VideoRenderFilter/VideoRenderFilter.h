@@ -8,7 +8,17 @@
 #include "d3dx11effect.h"
 #include <d3d11.h>
 #include <DirectXMath.h>
+# include <dxgi1_5.h>
+#include <vector>
 using namespace DirectX;
+const int MAXPLANE = 4;
+struct DXFormatInfo
+{
+	DXGI_FORMAT format;
+	int width;
+	int height;
+};
+
 class  VideoRenderFilter : public CSSFilter
 {
 public:
@@ -36,15 +46,14 @@ public:
 	bool InitializeBuffers(ID3D11Device*);
 	bool UpdateBuffers(ID3D11Buffer*, int, int, int, int);
 	void RenderBuffers(ID3D11Buffer*);
-
+	std::vector< DXFormatInfo> GetDXFormat(CFrameSharePtr &stFrame);
 private:
 	QWidget * m_pWidget;
-	IDXGISwapChain* m_swapChain;
-	ID3D11Device1* m_device1;
-	ID3D11DeviceContext1* m_deviceContext1;
 	ID3D11Device* m_device;
 	ID3D11DeviceContext* m_deviceContext;
-
+	IDXGISwapChain1        *m_swapChain;   /* DXGI 1.2 swap chain */
+	IDXGISwapChain4        *m_swapChain4;  /* DXGI 1.5 for HDR metadata */
+	DXGI_HDR_METADATA_HDR10 hdr10;
 
 	ID3D11RenderTargetView* m_renderTargetView;
 
@@ -59,8 +68,8 @@ private:
 	ID3D11Texture2D *m_texture2dText;
 	ID3D11ShaderResourceView* m_textureText;
 
-	ID3D11Texture2D *m_pSourceTexture2d;
-	ID3D11ShaderResourceView* m_pSourceTexture;
+	ID3D11Texture2D *m_pSourceTexture2d[MAXPLANE];
+	ID3D11ShaderResourceView* m_pSourceTexture[MAXPLANE];
 
 
 protected:
@@ -73,7 +82,10 @@ protected:
 	ID3DX11EffectScalarVariable     *m_pType;
 	ID3DX11EffectScalarVariable     *m_pSourceWidth;
 	ID3DX11EffectScalarVariable     *m_pSourceHeight;
-	ID3DX11EffectShaderResourceVariable	*m_pTextSource;
+	ID3DX11EffectShaderResourceVariable	*m_pTextSourceY;
+	ID3DX11EffectShaderResourceVariable	*m_pTextSourceU;
+	ID3DX11EffectShaderResourceVariable	*m_pTextSourceV;
+	ID3DX11EffectShaderResourceVariable	*m_pTextSourceA;
 	ID3D11InputLayout* m_layout;
 
 	ID3D11BlendState* m_alphaEnableBlendingState;

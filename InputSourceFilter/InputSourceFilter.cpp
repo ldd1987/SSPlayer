@@ -1,57 +1,116 @@
 #include "InputSourceFilter.h"
 #include "../Common/MediaTimer.h"
-#define BUFFERSIZE 10
-InputSourceFilter::InputSourceFilter(CInputSourceParam &param) : CSSFilter(param.m_strFileName)
+const int BUFFERSIZE = 125;
+#include <QFileInfo>
+CInputFileSource::CInputFileSource(CInputSourceParam &param) : CSSFilter(param.m_strFileName)
 {
+	m_nFirstAudioPts = AV_NOPTS_VALUE;
+	m_nFirstVideoPts = AV_NOPTS_VALUE;
 	m_InputSourceParam = param;
-	m_dbPlaySpeed = 1;
-	m_pstFmtCtx = 0;
+
+	m_pstFmtCtx = NULL;
+	m_pstAudioCodecCtx = NULL;
+	m_pstVideoCodecCtx = NULL;
 	m_nVideoIndex = -1;
 	m_nAudioIndex = -1;
 	m_nSubscriptIndex = -1;
-	m_pstAudioCodecCtx = 0;
-	m_pstVideoCodecCtx = 0;
-	m_eSyncType = SYNC_AUDIO;
 	m_nOrgAudioChannelLayOut = -1;
-	m_pstSwrContext = 0;
+	m_nIndex = 1;
+	m_nFixerPreFrameTimestemp = -1;
+	m_nFixerOffset = 0;
+	m_bReadFinish = false;
+	m_pstSwrContext = NULL;
+	m_nFrameRate = -1;
+	//m_stLastNotifyTimer.reset();
+	m_nLastProgressTime = 0;
+
+	m_bPauseStatus = false;
+
+	//
+	m_nTempTime = 0;
+	m_dbNowTime = 0;
+
+	m_fLeftVolume = 0;
+	m_fRightVolume = 0;
+
+	m_bFinished = true;
+	//
+	m_dbLastTime = 0;
+	m_dbVideoLastTime = 0;
+	m_pSwsCtx = NULL;
+	m_picture = NULL;
+
+	m_nLaseFireVideoTime = 0;
+	m_dbAudioLastTime = 0;
+	m_nWidth = 0;
+	m_nHeight = 0;
+	m_dbVideoTemp = 0;
+	m_dbAudioTemp = 0;
+	m_bExit = false;
+	m_bPause = false;
 	m_hDecoderAudioThread = NULL;
 	m_hDecoderVideoThread = NULL;
- 	m_hSendVideoThread = NULL;
+	m_hReadThread = NULL;
+	m_hSendVideoThread = NULL;
 	m_hSendAudioThread = NULL;
+	m_bStartSupportData = false;
+	m_nSyncTime = -1;
+	m_nSyncVideoTime = -1;
+	m_nLastAudioTime = -1;
+	m_bExit = false;
+	m_nFirstAudioTime = -1;
+	m_nFirstVideoTime = -1;
+	m_nLastVideoTime = -1000000;
+	m_dbPlaySpeed = 1;
 	m_bPlay = true;
 	m_nFirstOrgAudioPts = -1;
 	m_nFirstOrgVideoPts = -1;
-	m_nSyncVideoTime = -1;
-	m_nFirstVideoTime = -1;
-	m_nLastAudioTime = -1;
-	m_nSyncTime = -1;
-	m_nFirstAudioTime = -1;
-	m_dbRatio = 0;
+	m_bHardWare = false;
 	m_bSeek = false;
-	m_bReadFinish = false;
-	m_pSwsCtx = 0;
-	m_picture = 0;
-	m_bExit = false;
+	m_mapIndex2Pro.clear();
+	m_eSyncType = SYNC_AUDIO;
+	m_bAudioFile = false;
 	m_hEventVideoHandle = CreateEvent(NULL, FALSE, FALSE, NULL);
 	m_hEventAudioHandle = CreateEvent(NULL, FALSE, FALSE, NULL);
 }
 
 
-void InputSourceFilter::DecoderAudioPacket()
+void CInputFileSource::StartService()
 {
-	AVFrame * m_pstDecodedAudioFrame = av_frame_alloc();
-	while (m_bExit == false)
+	m_bStartSupportData = false;
+	int nRet = Open();
+	if (nRet == 0)
 	{
-		if (m_bSeek)
+		m_hReadThread = CreateThread(NULL, 0, ReadFunc, this, 0, NULL);
+		m_hDecoderVideoThread = CreateThread(NULL, 0, DecoderVideoFunc, this, 0, NULL);
+		m_hSendVideoThread = CreateThread(NULL, 0, SendVideoFunc, this, 0, NULL);
+		m_hSendAudioThread = CreateThread(NULL, 0, SendAudioFunc, this, 0, NULL);
+
+	}
+}
+
+DWORD WINAPI  CInputFileSource::ReadFunc(LPVOID arg)
+{
+	CInputFileSource *pThis = (CInputFileSource *)arg;
+	if (NULL == pThis)
+	{
+		return -1;
+	}
+
+
+
+	while (pThis->m_bExit == false)
+	{
+		if (pThis->m_bSeek)
 		{
 			av_usleep(10 * 1000); // 1ms(1);
 			continue;
 		}
-		if (m_bStartSupportData)
+		if (pThis->m_bStartSupportData)
 		{
-			if (m_bAudioFile)
+			if (pThis->m_bAudioFile)
 			{
-				if ((m_ListAudio.GetTimestampInterval() > 1500))
+				if ((pThis->m_ListAudio.GetTimestampInterval() > 1500))
 				{
 					av_usleep(10 * 1000); // 1ms(1);
 					continue;
@@ -59,9 +118,9 @@ void InputSourceFilter::DecoderAudioPacket()
 			}
 			else
 			{
-				if (m_nVideoIndex >= 0)
+				if (pThis->m_nVideoIndex != -1)
 				{
-					if (m_deqVideoPacket.size() >= BUFFERSIZE)
+					if (pThis->m_deqVideoPacket.size() + pThis->m_ListVideo.Size() >= BUFFERSIZE)
 					{
 						av_usleep(10 * 1000); // 1ms(1);
 						continue;
@@ -69,7 +128,7 @@ void InputSourceFilter::DecoderAudioPacket()
 				}
 				else
 				{
-					if ((m_ListAudio.GetTimestampInterval() > 1500))
+					if ((pThis->m_ListAudio.GetTimestampInterval() > 1500))
 					{
 						av_usleep(10 * 1000); // 1ms(1);
 						continue;
@@ -78,99 +137,103 @@ void InputSourceFilter::DecoderAudioPacket()
 			}
 
 		}
-		std::lock_guard< std::mutex> stLock(m_Mutex);
+		Sleep(3);
+		QMutexLocker stLock(&pThis->m_Mutex);
 		AVPacket packet;
 		av_init_packet(&packet);
 
-		int ret = av_read_frame(m_pstFmtCtx, &packet);
+		int ret = av_read_frame(pThis->m_pstFmtCtx, &packet);
 		if (ret != 0)
 		{
-			if (ret == AVERROR_EOF || avio_feof(m_pstFmtCtx->pb))
+			if (ret == AVERROR_EOF || avio_feof(pThis->m_pstFmtCtx->pb))
 			{
 				//设置读取文件已经完毕，真正的停止播放在队列中控制
-				m_bReadFinish = true;
+				//m_pstQueue->setFinished(true);
+				pThis->m_bReadFinish = true;
 			}
 			av_packet_unref(&packet);
 			av_free_packet(&packet);
-			break;
+			continue;
 		}
-		if (packet.stream_index == m_nVideoIndex)
+		if (packet.stream_index == pThis->m_nVideoIndex)
 		{
-			std::lock_guard< std::mutex> stLockVideo(m_MutexPacketVideo);
-			m_deqVideoPacket.push_back(packet);
+			QMutexLocker stLockVideo(&pThis->m_MutexPacketVideo);
+			pThis->m_deqVideoPacket.push_back(packet);
 		}
-		else if (packet.stream_index == m_nAudioIndex)
+		else if (packet.stream_index == pThis->m_nAudioIndex)
 		{
-			int ret = 0;
-			do
+			AVFrame * m_pstDecodedAudioFrame = av_frame_alloc();
+			while (1)
 			{
-				int frame_finished = 0;
+				int nRet = avcodec_receive_frame(pThis->m_pstAudioCodecCtx, m_pstDecodedAudioFrame);
+				if (nRet < 0)
 				{
-					ret = avcodec_decode_audio4(m_pstAudioCodecCtx, m_pstDecodedAudioFrame, &frame_finished, &packet);
-					if (ret > 0 && frame_finished)
-					{
-						////resample可能是从高到低或者从低到高。
-						////从低到高的话，采样数会变得更多。
-						int out_samples = m_pstDecodedAudioFrame->nb_samples;
-						out_samples *= kOutSampleRate;
-						out_samples /= m_pstDecodedAudioFrame->sample_rate;
-
-						//将数字适当放大。
-						out_samples *= 2;
-
-						int out_buffer_size = out_samples * kOutBytesPerSample * kOutChannels;
-						unsigned char * out_buffer = new unsigned char[out_buffer_size];
-						memset(out_buffer, 0, out_buffer_size);
-
-						int actual_out_samples = 0;
-						if (0 == ResampleAudio(m_pstDecodedAudioFrame, out_buffer, out_samples, actual_out_samples))
-						{
-							int actual_out_bytes = actual_out_samples * kOutBytesPerSample * kOutChannels;
-							CFrameSharePtr frame = NewShareFrame();
-							frame->m_nAudioChannel = kOutChannels;
-							frame->m_nAudioSampleRate = kOutSampleRate;
-							frame->m_nBitPerSample = kOutBytesPerSample * 8;
-							frame->m_nTimesTamp = 0;
-							frame->m_nLen = actual_out_bytes;
-							frame->AllocMem(actual_out_bytes);
-							memcpy(frame->GetDataPtr(), out_buffer, actual_out_bytes);
-							frame->m_eFrameType = eAudioFrame;
-							
-							/*				FILE *fp = fopen("E:\\PCM.pcm", "ab+");
-							fwrite(frame->m_ucData, frame->m_iLength, 1, fp);
-							fclose(fp);*/
-							m_pstDecodedAudioFrame->pts = av_frame_get_best_effort_timestamp(m_pstDecodedAudioFrame);
-							double dbPts = av_q2d(m_pstFmtCtx->streams[m_nAudioIndex]->time_base) * m_pstDecodedAudioFrame->pts * 1000LL;
-							long long pts = dbPts;
-							if (m_nFirstOrgAudioPts < 0)
-							{
-								m_nFirstOrgAudioPts = pts;
-							}
-
-							frame->m_nTimesTamp = pts;
-							frame->m_nShowTime = dbPts - m_nFirstOrgAudioPts;
-							double dbTotalTime = m_pstFmtCtx->duration * 1000 / AV_TIME_BASE;
-							m_dbRatio = (dbPts - m_nFirstOrgAudioPts) / dbTotalTime;
-							m_ListAudio.Enqueue(frame);
-
-						}
-						else
-						{
-
-						}
-						delete[]out_buffer;
-
-					}
-					else
-					{
-						
-					}
-					av_frame_unref(m_pstDecodedAudioFrame);
+					break;
 				}
+				else
+				{
+					long nDstSamples = av_rescale_rnd(m_pstDecodedAudioFrame->nb_samples, kOutSampleRate, m_pstDecodedAudioFrame->sample_rate, AV_ROUND_UP);
+					long nMaxDstSamples = nDstSamples;
+					if (pThis->m_pstSwrContext)
+					{
+						nDstSamples = av_rescale_rnd(swr_get_delay(pThis->m_pstSwrContext, m_pstDecodedAudioFrame->sample_rate) +
+							m_pstDecodedAudioFrame->nb_samples, kOutSampleRate, m_pstDecodedAudioFrame->sample_rate, AV_ROUND_UP);
+					}
+					if (nMaxDstSamples < nDstSamples)
+					{
+						nMaxDstSamples = nDstSamples;
+					}
 
 
-			} while (false);
+					int out_buffer_size = nMaxDstSamples * kOutBytesPerSample * kOutChannels;
+					unsigned char * out_buffer = new unsigned char[out_buffer_size];
+					memset(out_buffer, 0, out_buffer_size);
+					int actual_out_samples = 0;
+					if (0 == pThis->ResampleAudio(m_pstDecodedAudioFrame, out_buffer, nDstSamples, actual_out_samples))
+					{
+						int actual_out_bytes = actual_out_samples * kOutBytesPerSample * kOutChannels;
+						CFrameSharePtr frame = NewShareFrame();
+						frame->m_nAudioChannel = kOutChannels;
+						frame->m_nAudioSampleRate = kOutSampleRate;
+						frame->m_nBitPerSample = kOutBytesPerSample * 8;
+						frame->m_nTimesTamp = 0;
+						frame->m_nLen = actual_out_bytes;
+						frame->AllocMem(actual_out_bytes);
+						memcpy(frame->GetDataPtr(), out_buffer, actual_out_bytes);
+						frame->m_eFrameType = eAudioFrame;
+					
+						/*				FILE *fp = fopen("E:\\PCM.pcm", "ab+");
+						fwrite(frame->m_ucData, frame->m_iLength, 1, fp);
+						fclose(fp);*/
+						m_pstDecodedAudioFrame->pts = av_frame_get_best_effort_timestamp(m_pstDecodedAudioFrame);
+						double dbPts = av_q2d(pThis->m_pstFmtCtx->streams[pThis->m_nAudioIndex]->time_base) * m_pstDecodedAudioFrame->pts * 1000LL;
+						long long pts = dbPts;
+						if (pThis->m_nFirstOrgAudioPts < 0)
+						{
+							pThis->m_nFirstOrgAudioPts = pts;
+						}
+						if (pThis->m_pstFmtCtx->duration != AV_NOPTS_VALUE)
+						{
+							double dbTotalTime = pThis->m_pstFmtCtx->duration * 1000 / AV_TIME_BASE;
+						}
+						frame->m_nTimesTamp = pts;
+						frame->m_nShowTime = dbPts - pThis->m_nFirstOrgAudioPts;
+						pThis->m_ListAudio.Enqueue(frame);
 
+					}
+					delete[]out_buffer;
+				}
+			}
+			int nRet = avcodec_send_packet(pThis->m_pstAudioCodecCtx, &packet);
+			if (nRet < 0)
+			{
+				
+			}
+			if (m_pstDecodedAudioFrame != NULL)
+			{
+				av_frame_free(&m_pstDecodedAudioFrame);
+				m_pstDecodedAudioFrame = NULL;
+			}
 			av_packet_unref(&packet);
 			av_free_packet(&packet);
 		}
@@ -181,17 +244,945 @@ void InputSourceFilter::DecoderAudioPacket()
 		}
 	}
 
-	if (m_pstDecodedAudioFrame != NULL)
+
+	return 0;
+}
+
+void CInputFileSource::SyncAudio()
+{
+	if (m_bReadFinish && m_bFlush)
 	{
-		av_frame_free(&m_pstDecodedAudioFrame);
-		m_pstDecodedAudioFrame = NULL;
+		if (m_bStartSupportData == false)
+		{
+			m_bStartSupportData = true;
+		}
+	}
+	if (m_bStartSupportData == false)
+	{
+		return;
+	}
+	if (!m_bPlay || m_bSeek)
+	{
+		return;
+	}
+
+	CFrameSharePtr frameaudio = m_ListAudio.Front();
+	if (frameaudio)
+	{
+		QMutexLocker stLock(&m_MutexSyncAudioTime);
+		if (m_nSyncTime < 0)
+		{
+			m_nSyncTime = QkTimer::now();
+		}
+		if (m_nFirstAudioTime < 0)
+		{
+			m_nFirstAudioTime = frameaudio->m_nTimesTamp;
+		}
+		float dbTemp = frameaudio->m_nTimesTamp - m_nFirstAudioTime;
+		m_nLastAudioTime = frameaudio->m_nTimesTamp;
+
+		long long nMayNowTime = (long long)(dbTemp / m_dbPlaySpeed) + m_nSyncTime;
+		long long nRealNowTime = QkTimer::now();
+
+		int nTempTime = nMayNowTime - nRealNowTime;
+		if (nTempTime > 0)
+		{
+			Sleep(1);
+			return;
+		}
+		else if (nTempTime < -250 /*&& m_bDelAudioFrame*/)
+		{
+			
+		}
+			m_nLastAudioTime = frameaudio->m_nTimesTamp;
+			frameaudio->m_nTimesTamp = nRealNowTime;
+			
+			{
+				DeliverData(frameaudio);
+			}
+			m_ListAudio.Dequeue();
+			if (m_bPlayVideo == false)
+			{
+				CFrameSharePtr framevideo = m_ListVideo.Front();
+				if (framevideo)
+				{
+					if (framevideo->m_nTimesTamp > m_nLastAudioTime)
+					{
+						
+					}
+					else
+					{
+						m_bPlayVideo = true;
+					}
+				}
+			}
+			
+	}
+	else
+	{
+		//Sleep(2);
+	}
+
+}
+
+void CInputFileSource::DecoderVideo()
+{
+	if (!m_bPlay || m_bSeek)
+	{
+		return;
+	}
+	if (m_bStartSupportData == false)
+	{
+		if (m_ListVideo.Size() >= 25)
+		{
+			m_bStartSupportData = true;
+			return;
+		}
+	}
+	else
+	{
+		if (m_ListVideo.Size() > 30)
+		{
+			return;
+		}
+	}
+
+	{
+
+		QMutexLocker stLock(&m_Mutex);
+		bool bempty = false;
+		AVPacket packet;
+		{
+			QMutexLocker stLocker(&m_MutexPacketVideo);
+			if (m_deqVideoPacket.size() <= 0)
+			{
+				bempty = true;
+			}
+			else
+			{
+				packet = m_deqVideoPacket.front();
+				m_deqVideoPacket.pop_front();
+			}
+			
+		}
+		if (bempty)
+		{
+			if (m_bReadFinish)
+			{
+				int nRet = avcodec_send_packet(m_pstVideoCodecCtx, NULL);
+				if (nRet < 0)
+				{
+					return;
+				}
+			}
+			else
+			{
+				return;
+			}
+		}
+
+		int frame_finished = 0;
+		if (packet.stream_index == m_nVideoIndex)
+		{
+			AVFrame * m_pstDecodedVideoBuffer = av_frame_alloc();
+			while (1)
+			{
+				int nRet = avcodec_receive_frame(m_pstVideoCodecCtx, m_pstDecodedVideoBuffer);
+				if (nRet < 0)
+				{
+					
+					if (nRet == AVERROR_EOF)
+					{
+						m_bFlush = true;
+					}
+					break;
+				}
+				else
+				{
+					int width = 0;
+					int height = 0;
+					int nSize = 0;
+					int pixels_buffer_size = 0;
+					if (m_pstVideoCodecCtx)
+					{
+						width = m_pstVideoCodecCtx->width;
+						height = m_pstVideoCodecCtx->height;
+						nSize = height * width;
+						pixels_buffer_size = nSize * 3 / 2;
+					}
+
+					bool bAudio = true;
+					if (m_nAudioIndex == -1)
+					{
+						bAudio = false;
+					}
+					long long nTotalTime = 0;
+					if (m_pstFmtCtx->duration != AV_NOPTS_VALUE)
+					{
+						nTotalTime = m_pstFmtCtx->duration * 1000 / AV_TIME_BASE;
+					}
+					if (m_bHardWare)
+					{
+					
+
+					}
+					else
+					{
+						if (m_pstDecodedVideoBuffer->format == AV_PIX_FMT_YUV420P)
+						{
+							CFrameSharePtr stFrame = NewShareFrame();
+							stFrame->m_nWidth = width;
+							stFrame->m_nHeight = height;
+							stFrame->m_nTimesTamp = 0;
+							stFrame->m_nLen = pixels_buffer_size;
+							stFrame->m_eFrameType = eVideoFrame;
+							stFrame->m_ePixType = eYUV420P;
+							if (1)
+							{
+								stFrame->AllocMem(pixels_buffer_size);
+								int a0 = 0, i;
+								int nHightTemp = height >> 1;
+								int nWidhtTemp = width >> 1;
+								int a1 = nSize;
+								int a2 = a1 * 5 / 4;
+								int nTempp = m_pstDecodedVideoBuffer->linesize[1] / 2;
+								unsigned char *pFrameData = stFrame->GetDataPtr();
+								for (i = 0; i < height; i++)
+								{
+									memcpy(pFrameData + a0, m_pstDecodedVideoBuffer->data[0] + i * m_pstDecodedVideoBuffer->linesize[0], width);
+									if (i % 2 == 0)
+									{
+										memcpy(pFrameData + a1, m_pstDecodedVideoBuffer->data[1] + i *nTempp, nWidhtTemp);
+										memcpy(pFrameData + a2, m_pstDecodedVideoBuffer->data[2] + i * nTempp, nWidhtTemp);
+										a1 += nWidhtTemp;
+										a2 += nWidhtTemp;
+									}
+									a0 += width;
+								}
+							}
+							
+							m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
+
+							long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
+							stFrame->m_nTimesTamp = nPTS;// +2000;
+							if (m_nFirstOrgVideoPts < 0)
+							{
+								m_nFirstOrgVideoPts = nPTS;
+							}
+							m_dbVideoLastTime = nPTS;
+							stFrame->m_nShowTime = stFrame->m_nTimesTamp - m_nFirstOrgVideoPts;
+							m_ListVideo.Enqueue(stFrame);
+						}
+						else if (AV_PIX_FMT_YUV420P10LE == m_pstDecodedVideoBuffer->format)
+						{
+							CFrameSharePtr stFrame = NewShareFrame();
+							stFrame->m_nWidth = width;
+							stFrame->m_nHeight = height;
+							stFrame->m_nTimesTamp = 0;
+							stFrame->m_nLen = width * height * 3;
+							stFrame->AllocMem(width * height * 3);
+							stFrame->m_eFrameType = eVideoFrame;
+							stFrame->m_ePixType = eYUV420P10;
+							int a0 = 0, i;
+							int a1 = width * height * 2;
+							int a2 = a1 + width * height / 2;
+							unsigned char *pFrameData = stFrame->GetDataPtr();
+							for (i = 0; i < height; i++)
+							{
+								memcpy(pFrameData + a0, m_pstDecodedVideoBuffer->data[0] + i * m_pstDecodedVideoBuffer->linesize[0], width * 2);
+								if (i % 2 == 0)
+								{
+									memcpy(pFrameData + a1, m_pstDecodedVideoBuffer->data[1] + i / 2 * m_pstDecodedVideoBuffer->linesize[1], width);
+									memcpy(pFrameData + a2, m_pstDecodedVideoBuffer->data[2] + i / 2 * m_pstDecodedVideoBuffer->linesize[2], width);
+									a1 += width;
+									a2 += width;
+								}
+								a0 += width * 2;
+							}
+
+							m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
+
+							long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
+							stFrame->m_nTimesTamp = nPTS;// +2000;
+							if (m_nFirstOrgVideoPts < 0)
+							{
+								m_nFirstOrgVideoPts = nPTS;
+							}
+
+							stFrame->m_nShowTime = stFrame->m_nTimesTamp - m_nFirstOrgVideoPts;
+							m_ListVideo.Enqueue(stFrame);
+						}
+						else if (m_pstDecodedVideoBuffer->format == AV_PIX_FMT_BGRA)
+						{
+							CFrameSharePtr frame = NewShareFrame();
+							frame->m_nWidth = width;
+							frame->m_nHeight = height;
+							frame->m_nTimesTamp = 0;
+							frame->m_nLen = width * height * 4;
+
+							frame->m_eFrameType = eVideoFrame;
+							frame->m_ePixType = eBGRA;
+							if (1)
+							{
+								frame->AllocMem(frame->m_nLen);
+								if (width * 4 == m_pstDecodedVideoBuffer->linesize[0])
+								{
+									memcpy(frame->GetDataPtr(), m_pstDecodedVideoBuffer->data[0], frame->m_nLen);
+								}
+								else
+								{
+									unsigned char *pFrameData = frame->GetDataPtr();
+									int a0 = 0;
+									int nRealCopyWidth = width * 4;
+									for (int i = 0; i < height; i++)
+									{
+										memcpy(pFrameData + a0, m_pstDecodedVideoBuffer->data[0] + i * m_pstDecodedVideoBuffer->linesize[0], nRealCopyWidth);
+										a0 += nRealCopyWidth;
+									}
+								}
+							}
+							
+							m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
+							long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
+							frame->m_nTimesTamp = nPTS;// +2000;
+							if (m_nFirstOrgVideoPts < 0)
+							{
+								m_nFirstOrgVideoPts = nPTS;
+							}
+							m_dbVideoLastTime = nPTS;
+							frame->m_nShowTime = frame->m_nTimesTamp - m_nFirstOrgVideoPts;
+							m_ListVideo.Enqueue(frame);
+						}
+						else if (m_pstDecodedVideoBuffer->format == AV_PIX_FMT_RGBA)
+						{
+							CFrameSharePtr frame = NewShareFrame();
+							frame->m_nWidth = width;
+							frame->m_nHeight = height;
+							frame->m_nTimesTamp = 0;
+							frame->m_nLen = width * height * 4;
+
+							frame->m_eFrameType = eVideoFrame;
+							frame->m_ePixType = eRGBA;
+							if (1)
+							{
+								frame->AllocMem(frame->m_nLen);
+								if (width * 4 == m_pstDecodedVideoBuffer->linesize[0])
+								{
+									memcpy(frame->GetDataPtr(), m_pstDecodedVideoBuffer->data[0], frame->m_nLen);
+								}
+								else
+								{
+									unsigned char *pFrameData = frame->GetDataPtr();
+									int a0 = 0;
+									int nRealCopyWidth = width * 4;
+									for (int i = 0; i < height; i++)
+									{
+										memcpy(pFrameData + a0, m_pstDecodedVideoBuffer->data[0] + i * m_pstDecodedVideoBuffer->linesize[0], nRealCopyWidth);
+										a0 += nRealCopyWidth;
+									}
+								}
+							}
+							
+							m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
+							long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
+							frame->m_nTimesTamp = nPTS;// +2000;
+							if (m_nFirstOrgVideoPts < 0)
+							{
+								m_nFirstOrgVideoPts = nPTS;
+							}
+							m_dbVideoLastTime = nPTS;
+							frame->m_nShowTime = frame->m_nTimesTamp - m_nFirstOrgVideoPts;
+							m_ListVideo.Enqueue(frame);
+						}
+						else
+						{
+							CFrameSharePtr frame = NewShareFrame();
+							frame->m_nWidth = width;
+							frame->m_nHeight = height;
+							frame->m_nTimesTamp = 0;
+							frame->m_nLen = pixels_buffer_size;
+							frame->AllocMem(pixels_buffer_size);
+							frame->m_eFrameType = eVideoFrame;
+							frame->m_ePixType = eYUV420P;
+							ConverToYUV420P(m_pstDecodedVideoBuffer, frame->GetDataPtr(), width, height);
+							m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
+							long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
+							frame->m_nTimesTamp = nPTS;// +2000;
+							if (m_nFirstOrgVideoPts < 0)
+							{
+								m_nFirstOrgVideoPts = nPTS;
+							}
+							m_dbVideoLastTime = nPTS;
+							frame->m_nShowTime = frame->m_nTimesTamp - m_nFirstOrgVideoPts;
+							m_ListVideo.Enqueue(frame);
+						}
+					}
+				}
+			}
+			if (false == bempty)
+			{
+				int nRet = avcodec_send_packet(m_pstVideoCodecCtx, &packet);
+				if (nRet < 0)
+				{
+					
+				}
+			}
+			
+			if (m_pstDecodedVideoBuffer != NULL)
+			{
+				av_frame_free(&m_pstDecodedVideoBuffer);
+				m_pstDecodedVideoBuffer = NULL;
+			}
+		}
+		av_packet_unref(&packet);
+		av_free_packet(&packet);
 	}
 }
 
-int InputSourceFilter::ResampleAudio(AVFrame* frame, unsigned char * out_buffer, int out_samples, int& actual_out_samples)
+void CInputFileSource::SyncVideoSyncVideo()
+{
+	if (m_bReadFinish && m_bFlush)
+	{
+		if (m_bStartSupportData == false)
+		{
+			m_bStartSupportData = true;
+		}
+	}
+	if (!m_bPlay || m_bSeek || m_bPlayVideo == false || false == m_bStartSupportData)
+	{
+		return;
+	}
+	do
+	{
+		CFrameSharePtr framevideo = m_ListVideo.Front();
+		if (framevideo)
+		{
+			QMutexLocker stLock(&m_MutexSyncVideoTime);
+			if (m_nSyncVideoTime < 0)
+			{
+				m_nSyncVideoTime = QkTimer::now();
+			}
+			if (m_nFirstVideoTime < 0)
+			{
+				m_nFirstVideoTime = framevideo->m_nTimesTamp;
+			}
+
+
+			bool bSend = true;
+			float dbTemp = framevideo->m_nTimesTamp - m_nFirstVideoTime;
+			float dbDiff = framevideo->m_nTimesTamp - m_nLastVideoTime;
+			
+
+			quint64 nMayNowTime = (quint32)(dbTemp / m_dbPlaySpeed) + m_nSyncVideoTime;
+			quint64 nRealNowTime = QkTimer::now();
+
+			int nTempTime = nMayNowTime - nRealNowTime;
+			if (nTempTime > 0)
+			{
+				break;
+			}
+
+			
+			{
+				{
+					//	QMutexLocker stLockRatio(&m_MutexRatio);
+					//	m_dbRatio = framevideo->m_nShowTime / double(framevideo->m_nTotalTime);
+				}
+
+				
+				{
+					m_nLastVideoTime = framevideo->m_nShowTime;
+					framevideo->m_nTimesTamp = nRealNowTime;
+					DeliverData(framevideo);
+				}
+			}
+			m_ListVideo.Dequeue();
+
+		}
+
+
+	} while (0);
+
+
+}
+
+void CInputFileSource::StopService()
+{
+	m_bExit = true;
+	if (m_hReadThread)
+	{
+		WaitForSingleObject(m_hReadThread, INFINITE);
+		CloseHandle(m_hReadThread);
+		m_hReadThread = NULL;
+	}
+	if (m_hDecoderVideoThread)
+	{
+		WaitForSingleObject(m_hDecoderVideoThread, INFINITE);
+		CloseHandle(m_hDecoderVideoThread);
+		m_hDecoderVideoThread = NULL;
+	}
+	if (m_hDecoderAudioThread)
+	{
+		WaitForSingleObject(m_hDecoderAudioThread, INFINITE);
+		CloseHandle(m_hDecoderAudioThread);
+		m_hDecoderAudioThread = NULL;
+	}
+	if (m_hSendVideoThread)
+	{
+		WaitForSingleObject(m_hSendVideoThread, INFINITE);
+		CloseHandle(m_hSendVideoThread);
+		m_hSendVideoThread = NULL;
+	}
+	if (m_hSendAudioThread)
+	{
+		WaitForSingleObject(m_hSendAudioThread, INFINITE);
+		CloseHandle(m_hSendAudioThread);
+		m_hSendAudioThread = NULL;
+	}
+	if (m_hEventVideoHandle)
+	{
+		CloseHandle(m_hEventVideoHandle);
+		m_hEventVideoHandle = NULL;
+	}
+	if (m_hEventAudioHandle)
+	{
+		CloseHandle(m_hEventAudioHandle);
+		m_hEventAudioHandle = NULL;
+	}
+	Close();
+	m_bStartSupportData = false;
+}
+
+int CInputFileSource::ConverToYUV420P(AVFrame* frame, unsigned char* rgb_buffer, int nWidth, int nHeight)
+//统一转成ARGB图片
+{
+	int ret = 0;
+	if (NULL == m_pSwsCtx)
+	{
+		m_pSwsCtx = sws_getCachedContext(
+			NULL,
+			frame->width,							 //source width
+			frame->height,							 //source height
+			(AVPixelFormat)frame->format,    //source format
+			nWidth,							 //destination width
+			nHeight,							 //destination height
+			AV_PIX_FMT_YUV420P,                 //destination pixel format
+			SWS_POINT,               //quality algorithm.
+			NULL,
+			NULL,
+			NULL);
+	}
+
+
+	if (NULL == m_pSwsCtx)
+	{
+		return -1;
+	}
+
+	if (NULL == m_picture)
+	{
+		m_picture = new AVPicture();
+		avpicture_alloc(m_picture, AV_PIX_FMT_YUV420P, nWidth, nHeight);
+		//	memset(picture->data[0], 0, iWidth * iHeight * 3 / 2);
+	}
+
+	ret = sws_scale(m_pSwsCtx,
+		frame->data, frame->linesize, 0, frame->height, m_picture->data, m_picture->linesize);
+	if (ret < 0)
+	{
+		sws_freeContext(m_pSwsCtx);
+		avpicture_free(m_picture);
+		delete m_picture;
+		m_picture = NULL;
+		m_pSwsCtx = NULL;
+		return -1;
+	}
+
+	int a = 0, i;
+	int nWidhtTemp = nWidth >> 1;
+	int  nHightTemp = nHeight >> 1;
+	for (i = 0; i < nHeight; i++)
+	{
+		memcpy(rgb_buffer + a, m_picture->data[0] + i * m_picture->linesize[0], nWidth);
+		a += nWidth;
+	}
+	for (i = 0; i < nHightTemp; i++)
+	{
+		memcpy(rgb_buffer + a, m_picture->data[1] + i * m_picture->linesize[1], nWidhtTemp);
+		a += nWidhtTemp;
+	}
+	for (i = 0; i < nHightTemp; i++)
+	{
+		memcpy(rgb_buffer + a, m_picture->data[2] + i * m_picture->linesize[2], nWidhtTemp);
+		a += nWidhtTemp;
+	}
+	return 0;
+}
+
+
+DWORD WINAPI  CInputFileSource::SendAudioFunc(LPVOID arg)
+{
+	CInputFileSource *pThis = (CInputFileSource *)arg;
+	if (NULL == pThis)
+	{
+		return -1;
+	}
+	while (pThis->m_bExit == false)
+	{
+		DWORD dwRet = WaitForSingleObject(pThis->m_hEventVideoHandle, 2);
+		if (WAIT_OBJECT_0 == dwRet)
+		{
+			ResetEvent(pThis->m_hEventVideoHandle);
+			
+		}
+		else if (WAIT_TIMEOUT == dwRet)
+		{
+			
+		}
+		else if (WAIT_FAILED == dwRet)
+		{
+			
+		}
+		else
+		{
+			
+		}
+		pThis->SyncAudio();
+	}
+	return 0;
+}
+
+
+
+DWORD WINAPI  CInputFileSource::SendVideoFunc(LPVOID arg)
+{
+	CInputFileSource *pThis = (CInputFileSource *)arg;
+	if (NULL == pThis)
+	{
+		return -1;
+	}
+
+	while (pThis->m_bExit == false)
+	{
+		DWORD dwRet = WaitForSingleObject(pThis->m_hEventVideoHandle, 3);
+		if (WAIT_OBJECT_0 == dwRet)
+		{
+			ResetEvent(pThis->m_hEventVideoHandle);
+			
+		}
+		else if (WAIT_TIMEOUT == dwRet)
+		{
+			
+		}
+		else if (WAIT_FAILED == dwRet)
+		{
+			
+		}
+		else
+		{
+			
+		}
+		pThis->SyncVideoSyncVideo();
+
+	}
+	return 0;
+}
+
+DWORD WINAPI CInputFileSource::DecoderVideoFunc(LPVOID arg)
+{
+	CInputFileSource *pThis = (CInputFileSource *)arg;
+	if (NULL == pThis)
+	{
+		return -1;
+	}
+	while (pThis->m_bExit == false)
+	{
+		pThis->DecoderVideo();
+		Sleep(2);
+	}
+	return 0;
+}
+
+
+CInputFileSource::~CInputFileSource()
+{
+
+}
+
+
+
+int CInputFileSource::Open()
+{
+	QList<QString> listProgram;
+	/*av_register_all();
+	avformat_network_init();*/
+	QString strName = QString::fromLocal8Bit(m_InputSourceParam.m_strFileName.c_str());
+	QByteArray bPath = strName.toUtf8();
+	QFileInfo fileinfo;
+	fileinfo = QFileInfo(bPath);
+	//文件名
+	QString strExternFormat = fileinfo.suffix();
+	//文件后缀
+
+
+	if (strExternFormat.toLower() == "mp3" || strExternFormat.toLower() == "aac")
+	{
+		m_bAudioFile = true;
+	}
+	if (avformat_open_input(&m_pstFmtCtx, bPath.data(), NULL, NULL) < 0)
+	{
+		goto label_error;
+	}
+
+	if (avformat_find_stream_info(m_pstFmtCtx, NULL) < 0)
+	{
+		goto label_error;
+	}
+
+	//	m_pstFmtCtx->programs
+	int nMin = m_pstFmtCtx->duration / AV_TIME_BASE / 60;
+
+	m_mapIndex2Pro.clear();
+	char szBuf[128] = { 0 };
+	for (int i = 0; i < m_pstFmtCtx->nb_programs; i++) {
+		AVProgram* pro = m_pstFmtCtx->programs[i];
+
+		bool bHasVideo = false;
+		for (int j = 0; j < pro->nb_stream_indexes; j++) {
+			unsigned int nStreamIndex = pro->stream_index[j];
+			if (m_pstFmtCtx->streams[nStreamIndex]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+				bHasVideo = true;
+				break;
+			}
+		}
+		if (!bHasVideo) {
+			continue;
+		}
+
+		m_mapIndex2Pro.insert(make_pair(i, pro->id));
+		if (av_dict_count(pro->metadata)) {
+			AVDictionaryEntry* entry1 = av_dict_get(pro->metadata, "", NULL, AV_DICT_IGNORE_SUFFIX);
+			AVDictionaryEntry* entry2 = NULL;
+			if (entry1)
+			{
+				entry2 = av_dict_get(pro->metadata, "", entry1, AV_DICT_IGNORE_SUFFIX);
+			}
+
+			if (entry1)
+			{
+				if (entry2)
+				{
+					snprintf(szBuf, 128, "%s[%s]", entry1->value, entry2->value);
+				}
+				else
+				{
+					snprintf(szBuf, 128, "%s", entry1->value);
+				}
+			}
+		}
+		else {
+			snprintf(szBuf, 128, "%d", pro->id);
+		}
+		listProgram.push_back(szBuf);
+	}
+
+	int nIndex = (int)m_nIndex;
+	
+
+	if (m_mapIndex2Pro.size() >= 2)
+	{
+		
+		AVProgram* pro = m_pstFmtCtx->programs[0];
+		for (int i = 0; i < pro->nb_stream_indexes; i++)
+		{
+			int index = pro->stream_index[i];
+			if (m_nVideoIndex < 0 && m_pstFmtCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+			{
+				m_nVideoIndex = index;
+				m_pstVideoCodecCtx = m_pstFmtCtx->streams[i]->codec;
+			}
+			else if (m_nAudioIndex < 0 && m_pstFmtCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO)
+			{
+				m_nAudioIndex = index;
+				m_pstAudioCodecCtx = m_pstFmtCtx->streams[i]->codec;
+			}
+		}
+	}
+	else
+	{
+		
+		for (unsigned i = 0; i < m_pstFmtCtx->nb_streams; i++)
+		{
+			if (m_nVideoIndex < 0 && m_pstFmtCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+			{
+				m_nVideoIndex = i;
+				m_pstVideoCodecCtx = m_pstFmtCtx->streams[i]->codec;
+			}
+			else if (m_nAudioIndex < 0 && m_pstFmtCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO)
+			{
+				m_nAudioIndex = i;
+				m_pstAudioCodecCtx = m_pstFmtCtx->streams[i]->codec;
+			}
+		}
+	}
+
+
+
+	if (m_nVideoIndex != -1)
+	{
+		AVCodec* codec = avcodec_find_decoder(m_pstVideoCodecCtx->codec_id);
+		if (codec == NULL)
+		{
+			goto label_error;
+		}
+		if (m_bHardWare)
+		{
+			avcodec_close(m_pstVideoCodecCtx);
+			bool bAccel = true;
+			switch (codec->id)
+			{
+			case AV_CODEC_ID_MPEG2VIDEO:
+			case AV_CODEC_ID_H264:
+			case AV_CODEC_ID_VC1:
+			case AV_CODEC_ID_WMV3:
+			case AV_CODEC_ID_HEVC:
+			case AV_CODEC_ID_VP9:
+			{
+
+
+				bAccel = false;
+				break;
+			}
+			default:
+				bAccel = false;
+				break;
+			}
+
+			if (!bAccel)
+			{
+				m_bHardWare = false;
+				avcodec_close(m_pstVideoCodecCtx);
+				m_pstVideoCodecCtx = m_pstFmtCtx->streams[m_nVideoIndex]->codec;
+				AVCodec* codec = avcodec_find_decoder(m_pstVideoCodecCtx->codec_id);
+				if (codec == NULL)
+				{
+					goto label_error;
+				}
+			}
+		}
+
+
+		/////////////////////////////////////////
+		/*if (m_bHardWare == false)
+		{
+		m_pstVideoCodecCtx->thread_type = FF_THREAD_FRAME;
+		m_pstVideoCodecCtx->thread_count = 2;
+		}*/
+		AVDictionary *opts = NULL;
+		av_dict_set(&opts, "threads", "auto", 0);
+		av_dict_set(&opts, "refcounted_frames", "1", 0);
+		if (avcodec_open2(m_pstVideoCodecCtx, codec, &opts) < 0)
+		{
+			goto label_error;
+		}
+		if (m_bAudioFile)
+		{
+			m_eSyncType = SYNC_AUDIO;
+			m_bPlayVideo = true;
+		}
+		if (m_pstFmtCtx->streams[m_nVideoIndex]->avg_frame_rate.num *m_pstFmtCtx->streams[m_nVideoIndex]->avg_frame_rate.den > 0)
+		{
+			m_nFrameRate = m_pstFmtCtx->streams[m_nVideoIndex]->avg_frame_rate.num / m_pstFmtCtx->streams[m_nVideoIndex]->avg_frame_rate.den;//?????
+		}
+		else if (m_pstFmtCtx->streams[m_nVideoIndex]->r_frame_rate.den *m_pstFmtCtx->streams[m_nVideoIndex]->r_frame_rate.num > 0)
+		{
+			m_nFrameRate = m_pstFmtCtx->streams[m_nVideoIndex]->r_frame_rate.num / m_pstFmtCtx->streams[m_nVideoIndex]->r_frame_rate.den;//?????
+		}
+		else
+		{
+			m_nFrameRate = 25;
+		}
+
+		
+
+		m_nWidth = m_pstVideoCodecCtx->width;
+		m_nHeight = m_pstVideoCodecCtx->height;
+		
+	}
+	else
+	{
+		m_bFlush = true;
+		m_bPlayVideo = true;
+		m_eSyncType = SYNC_AUDIO;
+	}
+
+	if (m_nAudioIndex != -1)
+	{
+		AVCodec* codec = avcodec_find_decoder(m_pstAudioCodecCtx->codec_id);
+		if (codec == NULL)
+		{
+			goto label_error;
+		}
+
+		if (avcodec_open2(m_pstAudioCodecCtx, codec, NULL) < 0)
+		{
+			goto label_error;
+		}
+	}
+	else
+	{
+		m_eSyncType = SYNC_VIDEO;
+		m_bPlayVideo = true;
+
+	}
+
+	m_bExit = false;
+	m_bPause = false;
+	if (m_nVideoIndex >= 0 && m_nAudioIndex >= 0)
+	{
+		m_dbVideoTemp = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * 1000LL;
+		m_dbAudioTemp = av_q2d(m_pstFmtCtx->streams[m_nAudioIndex]->time_base) * 1000LL;
+
+		AVStream * audiostream = m_pstFmtCtx->streams[m_nAudioIndex];
+		AVStream *videostream = m_pstFmtCtx->streams[m_nVideoIndex];
+		int nAudioStart = m_pstFmtCtx->streams[m_nAudioIndex]->start_time * av_q2d(m_pstFmtCtx->streams[m_nAudioIndex]->time_base) * 1000;
+		int nVideodStart = m_pstFmtCtx->streams[m_nVideoIndex]->start_time * av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * 1000;
+		if (abs(nAudioStart - nVideodStart) > 3000)
+		{
+			m_eSyncType = SYNC_SYSTEM;
+			m_bPlayVideo = true;
+		}
+	}
+
+
+
+	return 0;
+
+label_error:
+
+	if (m_pstFmtCtx != NULL)
+	{
+		avformat_close_input(&m_pstFmtCtx);
+		m_pstFmtCtx = NULL;
+	}
+	m_nVideoIndex = -1;
+	m_nAudioIndex = -1;
+	m_pstAudioCodecCtx = NULL;
+	m_pstVideoCodecCtx = NULL;
+
+	return -1;
+}
+
+int CInputFileSource::InputData(CFrameSharePtr &frame)
+{
+	return 0;
+}
+
+
+int CInputFileSource::ResampleAudio(AVFrame* frame, unsigned char* out_buffer, int out_samples, int& actual_out_samples)
 //统一转成48000 采样频率，是否移动到调音台
 {
-	const uint8_t **in = (const uint8_t **)frame->extended_data;
+	const unsigned char **in = (const unsigned char **)frame->extended_data;
 	int ret = 0;
 	int channel_layerout = AV_CH_LAYOUT_STEREO;
 	int nLayOut = av_get_default_channel_layout(frame->channels);
@@ -243,7 +1234,7 @@ int InputSourceFilter::ResampleAudio(AVFrame* frame, unsigned char * out_buffer,
 		out_samples, //buffer长度能容纳每个通道多少个采样，输出缓冲器中每个通道的采样数
 		in, //number of input samples available in one channel
 		frame->nb_samples   //每个通道的采样数
-	);
+		);
 
 	if (ret <= 0)
 	{
@@ -257,592 +1248,14 @@ int InputSourceFilter::ResampleAudio(AVFrame* frame, unsigned char * out_buffer,
 	return 0;
 }
 
-
- DWORD WINAPI  InputSourceFilter::DecoderAudioFunc(LPVOID arg)
-{
-	 InputSourceFilter *pThis = (InputSourceFilter *)arg;
-	 if (NULL == pThis)
-	 {
-		 return -1;
-	 }
-	 pThis->DecoderAudioPacket();
-	 return 0;
-}
-
- void InputSourceFilter::DecoderVideoPacket()
- {
-	 if (m_bSeek)
-	 {
-		 return;
-	 }
-	 if (m_bStartSupportData == false)
-	 {
-		 if (m_deqVideoPacket.size() > 25)
-		 {
-			 m_bStartSupportData = true;
-		 }
-		 return;
-	 }
-	 if (m_bReadFinish && m_ListAudio.Size() <= 0)
-	 {
-		 if (m_eSyncType == SYNC_AUDIO)
-		 {
-			 m_eSyncType = SYNC_SYSTEM;
-		 }
-
-
-	 }
-
-	 if (m_ListVideo.Size() < 10)
-	 {
-
-		 std::lock_guard< std::mutex> stLock(m_Mutex);
-		 AVPacket packet;
-		 {
-			 std::lock_guard< std::mutex> stLocker(m_MutexPacketVideo);
-			 if (m_deqVideoPacket.size() <= 0)
-			 {
-				 return;
-			 }
-			 packet = m_deqVideoPacket.front();
-			 m_deqVideoPacket.pop_front();
-		 }
-
-		 int frame_finished = 0;
-		 if (packet.stream_index == m_nVideoIndex)
-		 {
-			 AVFrame * m_pstDecodedVideoBuffer = av_frame_alloc();
-			 int ret = avcodec_decode_video2(m_pstVideoCodecCtx, m_pstDecodedVideoBuffer, &frame_finished, &packet);
-			 if (ret > 0 && frame_finished)
-			 {
-
-				 int width = 0;
-				 int height = 0;
-				 int nSize = 0;
-				 int pixels_buffer_size = 0;
-				 if (m_pstVideoCodecCtx)
-				 {
-					 width = m_pstVideoCodecCtx->width;
-					 height = m_pstVideoCodecCtx->height;
-					 nSize = height * width;
-					 pixels_buffer_size = nSize * 3 / 2;
-				 }
-
-				 bool bAudio = true;
-				 if (m_nAudioIndex == -1)
-				 {
-					 bAudio = false;
-				 }
-				 long long nTotalTime = 0;
-				 if (m_pstFmtCtx->duration != AV_NOPTS_VALUE)
-				 {
-					 nTotalTime = m_pstFmtCtx->duration * 1000 / AV_TIME_BASE;
-				 }
-
-				
-				 {
-					 if (m_pstDecodedVideoBuffer->format == AV_PIX_FMT_YUV420P)
-					 {
-						 CFrameSharePtr stFrame = NewShareFrame();
-						 stFrame->m_nWidth = width;
-						 stFrame->m_nHeight = height;
-						 stFrame->m_nTimesTamp = 0;
-						 stFrame->m_nLen = pixels_buffer_size;
-						 stFrame->AllocMem(pixels_buffer_size);
-						 stFrame->m_eFrameType = eVideoFrame;
-						 stFrame->m_ePixType = eYUV420P;
-						 int a0 = 0, i;
-						 int nHightTemp = height >> 1;
-						 int nWidhtTemp = width >> 1;
-						 int a1 = nSize;
-						 int a2 = a1 * 5 / 4;
-						 int nTempp = m_pstDecodedVideoBuffer->linesize[1] / 2;
-						 unsigned char *pFrameData = stFrame->GetDataPtr();
-						 for (i = 0; i < height; i++)
-						 {
-							 memcpy(pFrameData + a0, m_pstDecodedVideoBuffer->data[0] + i * m_pstDecodedVideoBuffer->linesize[0], width);
-							 if (i % 2 == 0)
-							 {
-								 memcpy(pFrameData + a1, m_pstDecodedVideoBuffer->data[1] + i * nTempp, nWidhtTemp);
-								 memcpy(pFrameData + a2, m_pstDecodedVideoBuffer->data[2] + i * nTempp, nWidhtTemp);
-								 a1 += nWidhtTemp;
-								 a2 += nWidhtTemp;
-							 }
-							 a0 += width;
-						 }
-					
-						 m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
-
-						 long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
-						 stFrame->m_nTimesTamp = nPTS;// +2000;
-						 if (m_nFirstOrgVideoPts < 0)
-						 {
-							 m_nFirstOrgVideoPts = nPTS;
-						 }
-			
-						 stFrame->m_nShowTime = stFrame->m_nTimesTamp - m_nFirstOrgVideoPts;
-						 m_dbRatio = stFrame->m_nShowTime / double(nTotalTime);
-
-
-
-						 m_ListVideo.Enqueue(stFrame);
-					 }
-					 else if (m_pstDecodedVideoBuffer->format == AV_PIX_FMT_BGRA)
-					 {
-						 CFrameSharePtr frame = NewShareFrame();
-						 frame->m_nWidth = width;
-						 frame->m_nHeight = height;
-						 frame->m_nTimesTamp = 0;
-						 frame->m_nLen = width * height * 4;
-						 frame->AllocMem(frame->m_nLen);
-						 frame->m_eFrameType = eVideoFrame;
-						 frame->m_ePixType = eBGRA;
-						 
-						 if (width * 4 == m_pstDecodedVideoBuffer->linesize[0])
-						 {
-							 memcpy(frame->GetDataPtr(), m_pstDecodedVideoBuffer->data[0], frame->m_nLen);
-						 }
-						 else
-						 {
-							 unsigned char *pFrameData = frame->GetDataPtr();
-							 int a0 = 0;
-							 int nRealCopyWidth = width * 4;
-							 for (int i = 0; i < height; i++)
-							 {
-								 memcpy(pFrameData + a0, m_pstDecodedVideoBuffer->data[0] + i * m_pstDecodedVideoBuffer->linesize[0], nRealCopyWidth);
-								 a0 += nRealCopyWidth;
-							 }
-						 }
-						 m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
-						 long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
-						 frame->m_nTimesTamp = nPTS;// +2000;
-						 if (m_nFirstOrgVideoPts < 0)
-						 {
-							 m_nFirstOrgVideoPts = nPTS;
-						 }
-						 frame->m_nShowTime = frame->m_nTimesTamp - m_nFirstOrgVideoPts;
-						 m_dbRatio = frame->m_nShowTime / double(nTotalTime);
-
-						 m_ListVideo.Enqueue(frame);
-					 }
-					 else if (m_pstDecodedVideoBuffer->format == AV_PIX_FMT_RGBA)
-					 {
-						 CFrameSharePtr frame = NewShareFrame();
-						 frame->m_nWidth = width;
-						 frame->m_nHeight = height;
-						 frame->m_nTimesTamp = 0;
-						 frame->m_nLen = width * height * 4;
-						 frame->AllocMem(frame->m_nLen);
-						 frame->m_eFrameType = eVideoFrame;
-						 frame->m_ePixType = eRGBA;
-						
-						 if (width * 4 == m_pstDecodedVideoBuffer->linesize[0])
-						 {
-							 memcpy(frame->GetDataPtr(), m_pstDecodedVideoBuffer->data[0], frame->m_nLen);
-						 }
-						 else
-						 {
-							 unsigned char *pFrameData = frame->GetDataPtr();
-							 int a0 = 0;
-							 int nRealCopyWidth = width * 4;
-							 for (int i = 0; i < height; i++)
-							 {
-								 memcpy(pFrameData + a0, m_pstDecodedVideoBuffer->data[0] + i * m_pstDecodedVideoBuffer->linesize[0], nRealCopyWidth);
-								 a0 += nRealCopyWidth;
-							 }
-						 }
-						 m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
-						 long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
-						 frame->m_nTimesTamp = nPTS;// +2000;
-						 if (m_nFirstOrgVideoPts < 0)
-						 {
-							 m_nFirstOrgVideoPts = nPTS;
-						 }
-						 frame->m_nShowTime = frame->m_nTimesTamp - m_nFirstOrgVideoPts;
-						 m_dbRatio = frame->m_nShowTime / double(nTotalTime);
-
-						 m_ListVideo.Enqueue(frame);
-					 }
-					 else
-					 {
-					 CFrameSharePtr frame = NewShareFrame();
-						 frame->m_nWidth = width;
-						 frame->m_nHeight = height;
-						 frame->m_nTimesTamp = 0;
-						 frame->m_nLen = pixels_buffer_size;
-						 frame->AllocMem(pixels_buffer_size);
-						 frame->m_eFrameType = eVideoFrame;
-						 frame->m_ePixType = eYUV420P;
-						 ConverToYUV420P(m_pstDecodedVideoBuffer, frame->GetDataPtr(), width, height);
-						 m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
-						 long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
-						 frame->m_nTimesTamp = nPTS;// +2000;
-						 if (m_nFirstOrgVideoPts < 0)
-						 {
-							 m_nFirstOrgVideoPts = nPTS;
-						 }
-						 frame->m_nShowTime = frame->m_nTimesTamp - m_nFirstOrgVideoPts;
-						 m_dbRatio = frame->m_nShowTime / double(nTotalTime);
-
-						 m_ListVideo.Enqueue(frame);
-					 }
-				 }
-
-			 }
-			 if (m_pstDecodedVideoBuffer != NULL)
-			 {
-				 av_frame_free(&m_pstDecodedVideoBuffer);
-				 m_pstDecodedVideoBuffer = NULL;
-			 }
-		 }
-		 av_packet_unref(&packet);
-		 av_free_packet(&packet);
-	 }
- }
-
- int InputSourceFilter::ConverToYUV420P(AVFrame* frame, unsigned char* rgb_buffer, int nWidth, int nHeight)
-	 //统一转成ARGB图片
- {
-	 int ret = 0;
-	 if (NULL == m_pSwsCtx)
-	 {
-		 m_pSwsCtx = sws_getCachedContext(
-			 NULL,
-			 frame->width,							 //source width
-			 frame->height,							 //source height
-			 (AVPixelFormat)frame->format,    //source format
-			 nWidth,							 //destination width
-			 nHeight,							 //destination height
-			 AV_PIX_FMT_YUV420P,                 //destination pixel format
-			 SWS_POINT,               //quality algorithm.
-			 NULL,
-			 NULL,
-			 NULL);
-	 }
-
-
-	 if (NULL == m_pSwsCtx)
-	 {
-		 return -1;
-	 }
-
-	 if (NULL == m_picture)
-	 {
-		 m_picture = new AVPicture();
-		 avpicture_alloc(m_picture, AV_PIX_FMT_YUV420P, nWidth, nHeight);
-		 //	memset(picture->data[0], 0, iWidth * iHeight * 3 / 2);
-	 }
-
-	 ret = sws_scale(m_pSwsCtx,
-		 frame->data, frame->linesize, 0, frame->height, m_picture->data, m_picture->linesize);
-	 if (ret < 0)
-	 {
-		 sws_freeContext(m_pSwsCtx);
-		 avpicture_free(m_picture);
-		 delete m_picture;
-		 m_picture = NULL;
-		 m_pSwsCtx = NULL;
-		 return -1;
-	 }
-
-	 int a = 0, i;
-	 int nWidhtTemp = nWidth >> 1;
-	 int  nHightTemp = nHeight >> 1;
-	 for (i = 0; i < nHeight; i++)
-	 {
-		 memcpy(rgb_buffer + a, m_picture->data[0] + i * m_picture->linesize[0], nWidth);
-		 a += nWidth;
-	 }
-	 for (i = 0; i < nHightTemp; i++)
-	 {
-		 memcpy(rgb_buffer + a, m_picture->data[1] + i * m_picture->linesize[1], nWidhtTemp);
-		 a += nWidhtTemp;
-	 }
-	 for (i = 0; i < nHightTemp; i++)
-	 {
-		 memcpy(rgb_buffer + a, m_picture->data[2] + i * m_picture->linesize[2], nWidhtTemp);
-		 a += nWidhtTemp;
-	 }
-	 return 0;
- }
-
- DWORD WINAPI  InputSourceFilter::DecoderVideoFunc(LPVOID arg)
- {
-	 InputSourceFilter *pThis = (InputSourceFilter *)arg;
-	 if (NULL == pThis)
-	 {
-		 return -1;
-	 }
-	 while (pThis->m_bExit == false)
-	 {
-		 pThis->DecoderVideoPacket();
-		 Sleep(2);
-	 }
-	 
-	 return 0;
- }
-
- 
- DWORD WINAPI  InputSourceFilter::SendAudioFunc(LPVOID arg)
- {
-	 InputSourceFilter *pThis = (InputSourceFilter *)arg;
-	 if (NULL == pThis)
-	 {
-		 return -1;
-	 }
-	 while (pThis->m_bExit == false)
-	 {
-		 DWORD dwRet = WaitForSingleObject(pThis->m_hEventVideoHandle, 2);
-		 if (WAIT_OBJECT_0 == dwRet)
-		 {
-			 ResetEvent(pThis->m_hEventVideoHandle);
-			 //QK_LOG(LOG_WARNING, "Wait data sucess %d", pThis->m_nIndex);
-		 }
-		 else if (WAIT_TIMEOUT == dwRet)
-		 {
-			 //QK_LOG(LOG_WARNING, "Wait data time out %d", pThis->m_nIndex);
-		 }
-		 else if (WAIT_FAILED == dwRet)
-		 {
-			 //QK_LOG(LOG_WARNING, "Wait data error %d", pThis->m_nIndex);
-		 }
-		 else
-		 {
-			 //QK_LOG(LOG_WARNING, "Wait data unknow error %d", pThis->m_nIndex);
-		 }
-		 pThis->SyncAudio();
-	 }
-	 return 0;
- }
-
- void InputSourceFilter::SyncVideoSyncAudio()
- {
-	 do
-	 {
-		 CFrameSharePtr framevideo = m_ListVideo.Front();
-		 if (framevideo)
-		 {
-			 if (framevideo->m_nTimesTamp > m_nLastAudioTime)
-			 {
-				 break;
-			 }
-
-			 SyncVideoSyncVideo();
-		 }
-	 } while (0);
-
-
- }
-
- void InputSourceFilter::SyncVideoSyncVideo()
- {
-	 do
-	 {
-		 CFrameSharePtr framevideo = m_ListVideo.Front();
-		 if (framevideo)
-		 {
-			 std::lock_guard< std::mutex> stLock(m_MutexSyncVideoTime);
-			 if (m_nSyncVideoTime < 0)
-			 {
-				 m_nSyncVideoTime = QkTimer::now();
-			 }
-			 if (m_nFirstVideoTime < 0)
-			 {
-				 m_nFirstVideoTime = framevideo->m_nTimesTamp;
-			 }
-
-			 float dbTemp = framevideo->m_nTimesTamp - m_nFirstVideoTime;
-
-			 quint64 nMayNowTime = (quint32)(dbTemp / m_dbPlaySpeed) + m_nSyncVideoTime;
-			 quint64 nRealNowTime = QkTimer::now();
-
-			 int nTempTime = nMayNowTime - nRealNowTime;
-			 if (nTempTime > 0)
-			 {
-				 break;
-			 }
-			 framevideo->m_nTimesTamp = framevideo->m_nShowTime;
-			 DeliverData(framevideo);
-			 m_ListVideo.Dequeue();
-
-		 }
-
-
-	 } while (0);
-
-
- }
-
- void InputSourceFilter::SyncAudio()
- {
-	 if (m_bStartSupportData == false)
-	 {
-		 if (m_ListAudio.GetTimestampInterval() > 1000)
-		 {
-			 m_bStartSupportData = true;
-
-		 }
-		 return;
-	 }
-	 if (!m_bPlay || m_bSeek)
-	 {
-		 return;
-	 }
-
-	 CFrameSharePtr frameaudio = m_ListAudio.Front();
-	 if (frameaudio)
-	 {
-		 std::lock_guard< std::mutex> stLock(m_MutexSyncAudioTime);
-		 if (m_nSyncTime < 0)
-		 {
-			 m_nSyncTime = QkTimer::now();
-		 }
-		 if (m_nFirstAudioTime < 0)
-		 {
-			 m_nFirstAudioTime = frameaudio->m_nTimesTamp;
-		 }
-		 float dbTemp = frameaudio->m_nTimesTamp - m_nFirstAudioTime;
-		 m_nLastAudioTime = frameaudio->m_nTimesTamp;
-
-		 long long nMayNowTime = (long long)(dbTemp / m_dbPlaySpeed) + m_nSyncTime;
-		 long long nRealNowTime = QkTimer::now();
-
-		 int nTempTime = nMayNowTime - nRealNowTime;
-		 if (nTempTime > 0)
-		 {
-			 Sleep(1);
-			 return;
-		 }
-		 else if (nTempTime < -250 /*&& m_bDelAudioFrame*/)
-		 {
-			
-		 }
-
-		 m_nLastAudioTime = frameaudio->m_nTimesTamp;
-		 frameaudio->m_nTimesTamp = frameaudio->m_nShowTime;
-		 DeliverData(frameaudio);
-		 m_ListAudio.Dequeue();
-	 }
-	 else
-	 {
-		 //Sleep(2);
-	 }
-
- }
-
- DWORD WINAPI  InputSourceFilter::SendVideoFunc(LPVOID arg)
- {
-	 InputSourceFilter *pThis = (InputSourceFilter *)arg;
-	 if (NULL == pThis)
-	 {
-		 return -1;
-	 }
-
-	 while (pThis->m_bExit == false)
-	 {
-		 DWORD dwRet = WaitForSingleObject(pThis->m_hEventVideoHandle, 3);
-		 if (WAIT_OBJECT_0 == dwRet)
-		 {
-			 ResetEvent(pThis->m_hEventVideoHandle);
-			 //QK_LOG(LOG_WARNING, "Wait data sucess %d", pThis->m_nIndex);
-		 }
-		 else if (WAIT_TIMEOUT == dwRet)
-		 {
-			 //QK_LOG(LOG_WARNING, "Wait data time out %d", pThis->m_nIndex);
-		 }
-		 else if (WAIT_FAILED == dwRet)
-		 {
-			 //QK_LOG(LOG_WARNING, "Wait data error %d", pThis->m_nIndex);
-		 }
-		 else
-		 {
-			 //QK_LOG(LOG_WARNING, "Wait data unknow error %d", pThis->m_nIndex);
-		 }
-		 if (pThis->m_eSyncType == SYNC_AUDIO)
-		 {
-			 pThis->SyncVideoSyncAudio();
-		 }
-		 else
-		 {
-			 pThis->SyncVideoSyncVideo();
-		 }
-
-
-	 }
-	 return 0;
- }
-
-
-InputSourceFilter::~InputSourceFilter()
+void  CInputFileSource::SetOutFormat(int nFormatType)
 {
 
 }
 
-int InputSourceFilter::InputData(CFrameSharePtr &frame)
+int CInputFileSource::Close()
 {
-	return 0;
- }
 
-int InputSourceFilter::Start()
-{
-	m_bStartSupportData = false;
-	bool bRet = OpenFile();
-	if (bRet)
-	{
-		m_hDecoderAudioThread = CreateThread(NULL, 0, DecoderAudioFunc, this, 0, NULL);
-		m_hDecoderVideoThread = CreateThread(NULL, 0, DecoderVideoFunc, this, 0, NULL);
-		m_hSendVideoThread = CreateThread(NULL, 0, SendVideoFunc, this, 0, NULL);
-		m_hSendAudioThread = CreateThread(NULL, 0, SendAudioFunc, this, 0, NULL);
-
-	}
-	return 0;
-}
-
-void InputSourceFilter::Stop()
-{
-	m_bExit = true;
-	if (m_hDecoderAudioThread)
-	{
-		WaitForSingleObject(m_hDecoderAudioThread, INFINITE);
-		CloseHandle(m_hDecoderAudioThread);
-		m_hDecoderAudioThread = NULL;
-	}
-	if (m_hDecoderVideoThread)
-	{
-		WaitForSingleObject(m_hDecoderVideoThread, INFINITE);
-		CloseHandle(m_hDecoderVideoThread);
-		m_hDecoderVideoThread = NULL;
-	}
-	if (m_hDecoderAudioThread)
-	{
-		WaitForSingleObject(m_hDecoderAudioThread, INFINITE);
-		CloseHandle(m_hDecoderAudioThread);
-		m_hDecoderAudioThread = NULL;
-	}
-	if (m_hSendVideoThread)
-	{
-		WaitForSingleObject(m_hSendVideoThread, INFINITE);
-		CloseHandle(m_hSendVideoThread);
-		m_hSendVideoThread = NULL;
-	}
-	if (m_hSendAudioThread)
-	{
-		WaitForSingleObject(m_hSendAudioThread, INFINITE);
-		CloseHandle(m_hSendAudioThread);
-		m_hSendAudioThread = NULL;
-	}
-
-	Close();
-	m_bStartSupportData = false;
-}
-
-CStreamInfo InputSourceFilter::GetStreamInfo()
-{
-	return m_StreamInfo;
-}
-
-void InputSourceFilter::Close()
-{
 	if (m_pSwsCtx)
 	{
 		sws_freeContext(m_pSwsCtx);
@@ -855,7 +1268,7 @@ void InputSourceFilter::Close()
 		delete m_picture;
 		m_picture = NULL;
 	}
-	std::lock_guard<std::mutex> stLock(m_Mutex);
+	QMutexLocker stLock(&m_Mutex);
 	if (m_pstAudioCodecCtx != NULL)
 	{
 		avcodec_close(m_pstAudioCodecCtx);
@@ -866,6 +1279,10 @@ void InputSourceFilter::Close()
 	{
 
 		avcodec_close(m_pstVideoCodecCtx);
+		if (m_bHardWare)
+		{
+
+		}
 		m_pstVideoCodecCtx = NULL;
 
 	}
@@ -886,7 +1303,7 @@ void InputSourceFilter::Close()
 	m_ListAudio.Clear();
 	m_ListVideo.Clear();
 	{
-		std::lock_guard<std::mutex> stLock(m_MutexPacketVideo);
+		QMutexLocker stLock(&m_MutexPacketVideo);
 		int nSize = m_deqVideoPacket.size();
 		for (int i = 0; i < nSize; i++)
 		{
@@ -896,158 +1313,162 @@ void InputSourceFilter::Close()
 		}
 		m_deqVideoPacket.clear();
 	}
+	return 0;
+
 }
 
-bool InputSourceFilter::OpenFile()
+bool CInputFileSource::IsProcessOver()
 {
-	bool bRet = false;
-	av_register_all();
-	avformat_network_init();
-	m_StreamInfo.m_deqAudioStream.clear();
-	m_StreamInfo.m_deqVideoStream.clear();
-	do 
+	QMutexLocker stLock1(&m_Mutex);
+	QMutexLocker stLock(&m_MutexPacketVideo);
+
+	if (m_bReadFinish == true && m_ListAudio.Size() <= 0 && m_bFlush && m_ListVideo.Size() <= 0 &&  m_deqVideoPacket.size() <= 0)
 	{
-		if (avformat_open_input(&m_pstFmtCtx, m_InputSourceParam.m_strFileName.c_str(), NULL, NULL) < 0)
-		{
-			break;
-		}
-		if (avformat_find_stream_info(m_pstFmtCtx, NULL) < 0)
-		{
-			break;
-		}
-		for (unsigned i = 0; i < m_pstFmtCtx->nb_streams; i++)
-		{
-			if (m_pstFmtCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
-			{
-				CVideoStreamInfo info;
-				info.m_nStreamID = i;
-				info.m_nBitRate = m_pstFmtCtx->streams[i]->codec->bit_rate;
-				info.m_nWidth = m_pstFmtCtx->streams[i]->codec->width;
-				info.m_nHeight = m_pstFmtCtx->streams[i]->codec->height;
-				info.m_dbFrameRate = double(m_pstFmtCtx->streams[i]->codec->framerate.num) / m_pstFmtCtx->streams[i]->codec->framerate.den;
-				const AVCodecDescriptor *pDes = avcodec_descriptor_get(m_pstFmtCtx->streams[i]->codec->codec_id);
-				if (pDes)
-				{
-					info.m_strCodeID = pDes->name;
-				}
-
-				//info.m_strColorSpace = m_pstVideoCodecCtx->codec->pix_fmts
-				m_StreamInfo.m_deqVideoStream.push_back(info);
-
-				if (m_nVideoIndex < 0)
-				{
-					m_nVideoIndex = i;
-					m_pstVideoCodecCtx = m_pstFmtCtx->streams[i]->codec;
-				}
-				
-				
-			}
-			else if ( m_pstFmtCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO)
-			{
-				CAudioStreamInfo info;
-				info.m_nStreamID = i;
-				info.m_nBitRate = m_pstFmtCtx->streams[i]->codec->bit_rate;
-				info.m_nChannel = m_pstFmtCtx->streams[i]->codec->channels;
-				info.m_nChannelLayOut = m_pstFmtCtx->streams[i]->codec->channel_layout;
-				info.m_dbFrameRate = double(m_pstFmtCtx->streams[i]->codec->framerate.num) / m_pstFmtCtx->streams[i]->codec->framerate.den;
-				const AVCodecDescriptor *pDes = avcodec_descriptor_get(m_pstFmtCtx->streams[i]->codec->codec_id);
-				if (pDes)
-				{
-					info.m_strCodeID = pDes->name;
-				}
-				info.m_nSampleRate = m_pstFmtCtx->streams[i]->codec->sample_rate;
-				//info.m_strColorSpace = m_pstVideoCodecCtx->codec->pix_fmts
-				m_StreamInfo.m_deqAudioStream.push_back(info);
-
-				if (m_nAudioIndex < 0)
-				{
-					m_nAudioIndex = i;
-					m_pstAudioCodecCtx = m_pstFmtCtx->streams[i]->codec;
-				}
-				
-				
-			}
-			else if ( m_pstFmtCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_SUBTITLE)
-			{
-				if (m_nSubscriptIndex < 0)
-				{
-					m_nSubscriptIndex = i;
-				}
-				
-			}
-		}
-		if (m_nVideoIndex < 0 && m_nAudioIndex < 0)
-		{
-			break;
-		}
-		if (m_nVideoIndex >= 0)
-		{
-			AVCodec* codec = avcodec_find_decoder(m_pstVideoCodecCtx->codec_id);
-			if (codec == NULL)
-			{
-				break;
-			}
-			m_pstVideoCodecCtx->thread_type = FF_THREAD_FRAME;
-			m_pstVideoCodecCtx->thread_count = 2;
-			if (avcodec_open2(m_pstVideoCodecCtx, codec, NULL) < 0)
-			{
-				break;
-			}
-		}
-		else
-		{
-			m_eSyncType = SYNC_AUDIO;
-		}
-
-		if (m_nAudioIndex >= 0)
-		{
-			AVCodec* codec = avcodec_find_decoder(m_pstAudioCodecCtx->codec_id);
-			if (codec == NULL)
-			{
-				break;
-			}
-
-			if (avcodec_open2(m_pstAudioCodecCtx, codec, NULL) < 0)
-			{
-				break;
-			}
-		}
-		else
-		{
-			m_eSyncType = SYNC_VIDEO;
-		}
-		if (m_nVideoIndex >= 0 && m_nAudioIndex >= 0)
-		{
-			AVStream * audiostream = m_pstFmtCtx->streams[m_nAudioIndex];
-			AVStream *videostream = m_pstFmtCtx->streams[m_nVideoIndex];
-			int nAudioStart = m_pstFmtCtx->streams[m_nAudioIndex]->start_time * av_q2d(m_pstFmtCtx->streams[m_nAudioIndex]->time_base) * 1000;
-			int nVideodStart = m_pstFmtCtx->streams[m_nVideoIndex]->start_time * av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * 1000;
-			if (abs(nAudioStart - nVideodStart) > 3000)
-			{
-				m_eSyncType = SYNC_SYSTEM;
-			}
-		}
-		bRet = true;
-	} while (0);
-	if (!bRet)
-	{
-		if (m_pstAudioCodecCtx != NULL)
-		{
-			avcodec_close(m_pstAudioCodecCtx);
-			m_pstAudioCodecCtx = NULL;
-		}
-		if (m_pstVideoCodecCtx != NULL)
-		{
-			avcodec_close(m_pstVideoCodecCtx);
-			m_pstVideoCodecCtx = NULL;
-		}
-		if (m_pstFmtCtx != NULL)
-		{
-			avformat_close_input(&m_pstFmtCtx);
-			m_pstFmtCtx = NULL;
-		}
-		m_nVideoIndex = -1;
-		m_nAudioIndex = -1;
+		return true;
 	}
-	return bRet;
+	else
+	{
+		return false;
+	}
+}
+
+double CInputFileSource::GetSourceAllTime()
+{
+	return 1000;
+}
+
+int CInputFileSource::SetSourceSeek(double dbRatio)
+{
+	QMutexLocker stLock(&m_Mutex);
+	double dbRatioOrg = dbRatio;
+	m_bSeek = true;
+	m_bStartSupportData = false;
+	m_bFlush = false;
+	m_bReadFinish = false;
+	if (dbRatio < 0)
+	{
+		return -1;
+	}
+	if (dbRatio >= 1)
+	{
+		dbRatio = 1;
+	}
+	if (m_pstFmtCtx == NULL)
+	{
+		return 0;
+	}
+	long long timestamp = m_pstFmtCtx->duration;
+	timestamp *= dbRatio;
+	
+	AVRational ra;
+	ra.num = 1;
+	ra.den = AV_TIME_BASE;
+	bool bSeekSucess = false;
+	if (m_pstFmtCtx->start_time != AV_NOPTS_VALUE)
+	{
+		timestamp = timestamp + m_pstFmtCtx->start_time;
+	}
+	int64_t seek_target = timestamp;
+	int64_t seek_min = INT64_MIN;
+	int64_t seek_max = INT64_MAX;
+	//timestamp = av_rescale_q(timestamp, ra, m_pstFmtCtx->streams[m_nAudioIndex]->time_base);
+	if (NULL != m_pstVideoCodecCtx)
+	{
+		avcodec_flush_buffers(m_pstVideoCodecCtx);
+	}
+
+	if (NULL != m_pstAudioCodecCtx)
+	{
+		avcodec_flush_buffers(m_pstAudioCodecCtx);
+	}
+	m_ListVideo.Clear();
+	m_ListAudio.Clear();
+	m_nFirstAudioTime = -1;
+	m_nFirstVideoTime = -1;
+	m_nLastVideoTime = -10000000;
+	m_nSyncTime = -1;
+	m_nSyncVideoTime = -1;
+	m_nLastAudioTime = -1;
+	{
+		QMutexLocker stLock(&m_MutexPacketVideo);
+		int nSize = m_deqVideoPacket.size();
+		for (int i = 0; i < nSize; i++)
+		{
+			AVPacket packet = m_deqVideoPacket[i];
+			av_packet_unref(&packet);
+			av_free_packet(&packet);
+		}
+		m_deqVideoPacket.clear();
+	}
+
+	if (dbRatioOrg >= 1)
+	{
+		/*m_bReadFinish = true;
+		m_bFlush = true;*/
+	}
+	int nRet = avformat_seek_file(m_pstFmtCtx, -1, seek_min, seek_target, seek_max, 0);
+	if (nRet >= 0)
+	{
+		bSeekSucess = true;
+	}
+	else
+	{
+	
+	}
+	m_dbVideoLastTime = 0;
+	m_dbAudioLastTime = 0;
+	m_bSeek = false;
+	return 0;
+}
+
+
+void CInputFileSource::SetPlaySpeed(double dbSpeed)
+{
+
+	m_bSeek = true;
+	QMutexLocker stLock(&m_MutexSyncVideoTime);
+	m_nSyncVideoTime = -1;
+	m_nFirstVideoTime = -1;
+	QMutexLocker stLockEx(&m_MutexSyncAudioTime);
+	m_nSyncTime = -1;
+	m_nFirstAudioTime = -1;
+
+	m_dbPlaySpeed = dbSpeed;
+	m_bSeek = false;
+}
+
+void CInputFileSource::SetPsIndex(int index) {
+	bool bAudioSet = false, bVideoSet = false; // 使用 ps 中的第一个音频和视频
+	for (int i = 0; i < m_pstFmtCtx->nb_programs; i++) {
+		AVProgram* pro = m_pstFmtCtx->programs[i];
+		if (pro->id == m_mapIndex2Pro[index]) {
+			for (int j = 0; j < pro->nb_stream_indexes; j++) {
+				int stream_id = pro->stream_index[j];
+				if (!bAudioSet && m_pstFmtCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+					m_nAudioIndex = stream_id;
+					bAudioSet = true;
+				}
+				else if (!bVideoSet && m_pstFmtCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+					m_nVideoIndex = stream_id;
+					bVideoSet = true;
+				}
+			}
+		}
+	}
+}
+
+
+
+void CInputFileSource::SetPlay(bool bPlay)
+{
+	if (bPlay && m_bPlay == false)
+	{
+		m_nFirstAudioTime = -1;
+		m_nFirstVideoTime = -1;
+		m_nLastVideoTime = -10000000;
+		m_nSyncTime = -1;
+		m_nSyncVideoTime = -1;
+		m_nLastAudioTime = -1;
+	}
+	m_bPlay = bPlay;
 }
