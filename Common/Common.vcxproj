@@ -53,7 +53,7 @@
     <ClCompile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_CORE_LIB;COMMON_LIB;BUILD_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;..\opensource\ffmpeg_win_dev\64bit\include;..\opensource\glog\glog-0.3.3_custom_version\;..\opensource\glog\glog-0.3.3_custom_version\src\windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Optimization>Disabled</Optimization>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
@@ -68,14 +68,14 @@
     </Link>
     <QtMoc>
       <Define>UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_CORE_LIB;COMMON_LIB;BUILD_STATIC;%(PreprocessorDefinitions)</Define>
-      <IncludePath>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;%(AdditionalIncludeDirectories)</IncludePath>
+      <IncludePath>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;..\opensource\ffmpeg_win_dev\64bit\include;..\opensource\glog\glog-0.3.3_custom_version\;..\opensource\glog\glog-0.3.3_custom_version\src\windows;%(AdditionalIncludeDirectories)</IncludePath>
     </QtMoc>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_NO_DEBUG;NDEBUG;QT_CORE_LIB;COMMON_LIB;BUILD_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;..\opensource\ffmpeg_win_dev\64bit\include;..\opensource\glog\glog-0.3.3_custom_version\;..\opensource\glog\glog-0.3.3_custom_version\src\windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat />
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
@@ -89,20 +89,24 @@
     </Link>
     <QtMoc>
       <Define>UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_NO_DEBUG;NDEBUG;QT_CORE_LIB;COMMON_LIB;BUILD_STATIC;%(PreprocessorDefinitions)</Define>
-      <IncludePath>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;%(AdditionalIncludeDirectories)</IncludePath>
+      <IncludePath>.\GeneratedFiles;.;$(QTDIR)\include;.\GeneratedFiles\$(ConfigurationName);$(QTDIR)\include\QtCore;..\opensource\ffmpeg_win_dev\64bit\include;..\opensource\glog\glog-0.3.3_custom_version\;..\opensource\glog\glog-0.3.3_custom_version\src\windows;%(AdditionalIncludeDirectories)</IncludePath>
     </QtMoc>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Filter.h" />
     <ClInclude Include="Frame.h" />
+    <ClInclude Include="Helpers.h" />
     <ClInclude Include="MediaTimer.h" />
+    <ClInclude Include="SSLogger.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="waveout_output_win.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Filter.cpp" />
     <ClCompile Include="Frame.cpp" />
+    <ClCompile Include="Helpers.cpp" />
     <ClCompile Include="MediaTimer.cpp" />
+    <ClCompile Include="SSLogger.cpp" />
     <ClCompile Include="utils.cpp" />
     <ClCompile Include="waveout_output_win.cc" />
   </ItemGroup>

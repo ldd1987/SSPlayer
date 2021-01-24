@@ -1,0 +1,27 @@
+﻿cl : Command line warning D9035: option 'Gm' has been deprecated and will be removed in a future release
+  vlog_is_on.cc
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\vlog_is_on.cc(163): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\vlog_is_on.cc(163): warning C4267: 'initializing': conversion from 'size_t' to 'const int', possible loss of data
+  utilities.cc
+  raw_logging.cc
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\raw_logging.cc(153): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data
+  port.cc
+  logging.cc
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(592): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(725): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(750): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(760): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(1046): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(1046): warning C4267: 'initializing': conversion from 'size_t' to 'const int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(1329): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(1329): warning C4267: 'initializing': conversion from 'size_t' to 'const int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(1402): warning C4267: 'argument': conversion from 'size_t' to 'const _Ty', possible loss of data
+          with
+          [
+              _Ty=int
+          ]
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(1424): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(1502): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+c:\svn\opensource-vs2017\glog\glog-0.3.3_custom_version\src\logging.cc(1515): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+  Generating Code...
+  libglog_static.vcxproj -> C:\SVN\opensource-vs2017\glog\glog-0.3.3_custom_version\x64\Debug\libglog_static.lib

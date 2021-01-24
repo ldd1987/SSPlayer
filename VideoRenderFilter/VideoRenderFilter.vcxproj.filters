@@ -29,9 +29,15 @@
     <ClCompile Include="VideoRenderFilter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ConversionMatrix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="VideoRenderFilter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ConversionMatrix.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

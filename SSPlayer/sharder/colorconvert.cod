@@ -1,7 +1,7 @@
 //
 // FX Version: fx_5_0
 //
-// 1 local buffer(s)
+// 2 local buffer(s)
 //
 cbuffer $Globals
 {
@@ -11,8 +11,24 @@ cbuffer $Globals
     int     PixType;                    // Offset:  192, size:    4
     int     sourcewidth;                // Offset:  196, size:    4
     int     sourceheight;               // Offset:  200, size:    4
-    float4  bt709yuv = { 0.0625, 0.5, 0.5, 0 };// Offset:  208, size:   16
-    float4x4 bt709matrix = { 1.16400003, 1.16400003, 1.16400003, 0, 0, -0.213, 2.11199999, 0, 1.79299998, -0.532999992, 0, 0, 0, 0, 0, 0 };// Offset:  224, size:   64
+    int     transfer;                   // Offset:  204, size:    4
+    int     distransfer;                // Offset:  208, size:    4
+    int     primaries;                  // Offset:  212, size:    4
+    int     disprimaries;               // Offset:  216, size:    4
+    int     fullrange;                  // Offset:  220, size:    4
+    int     srcrange;                   // Offset:  224, size:    4
+    float   LuminanceScale;             // Offset:  228, size:    4
+    float4  bt709yuv = { 0.0625, 0.5, 0.5, 0 };// Offset:  240, size:   16
+    float4x4 bt601matrix = { 1.16400003, 1.16400003, 1.16400003, 0, 0, -0.391799986, 2.01719999, 0, 1.59599996, -0.813000023, 0, 0, 0, 0, 0, 0 };// Offset:  256, size:   64
+    float4x4 bt709matrix = { 1.16400003, 1.16400003, 1.16400003, 0, 0, -0.213, 2.11199999, 0, 1.79299998, -0.532999992, 0, 0, 0, 0, 0, 0 };// Offset:  320, size:   64
+    float4x4 bt2020matrix = { 1.16400003, 1.16400003, 1.16400003, 0, 0, -0.127007097, 2.14177227, 0, 1.67864001, -0.440987676, 0, 0, 0, 0, 0, 0 };// Offset:  384, size:   64
+}
+
+cbuffer PS_COLOR_TRANSFORM
+{
+    float4x4 WhitePoint;                // Offset:    0, size:   64
+    float4x4 Colorspace;                // Offset:   64, size:   64
+    float4x4 TransPrimaries;            // Offset:  128, size:   64
 }
 
 //
@@ -58,12 +74,29 @@ fxgroup
                 //   int PixType;                       // Offset:  192 Size:     4 [unused]
                 //   int sourcewidth;                   // Offset:  196 Size:     4 [unused]
                 //   int sourceheight;                  // Offset:  200 Size:     4 [unused]
-                //   float4 bt709yuv;                   // Offset:  208 Size:    16 [unused]
+                //   int transfer;                      // Offset:  204 Size:     4 [unused]
+                //   int distransfer;                   // Offset:  208 Size:     4 [unused]
+                //   int primaries;                     // Offset:  212 Size:     4 [unused]
+                //   int disprimaries;                  // Offset:  216 Size:     4 [unused]
+                //   int fullrange;                     // Offset:  220 Size:     4 [unused]
+                //   int srcrange;                      // Offset:  224 Size:     4 [unused]
+                //   float LuminanceScale;              // Offset:  228 Size:     4 [unused]
+                //   float4 bt709yuv;                   // Offset:  240 Size:    16 [unused]
                 //      = 0x3d800000 0x3f000000 0x3f000000 0x00000000 
-                //   float4x4 bt709matrix;              // Offset:  224 Size:    64 [unused]
+                //   float4x4 bt601matrix;              // Offset:  256 Size:    64 [unused]
+                //      = 0x3f94fdf4 0x3f94fdf4 0x3f94fdf4 0x00000000 
+                //        0x00000000 0xbec89a02 0x400119ce 0x00000000 
+                //        0x3fcc49ba 0xbf5020c5 0x00000000 0x00000000 
+                //        0x00000000 0x00000000 0x00000000 0x00000000 
+                //   float4x4 bt709matrix;              // Offset:  320 Size:    64 [unused]
                 //      = 0x3f94fdf4 0x3f94fdf4 0x3f94fdf4 0x00000000 
                 //        0x00000000 0xbe5a1cac 0x40072b02 0x00000000 
                 //        0x3fe58106 0xbf0872b0 0x00000000 0x00000000 
+                //        0x00000000 0x00000000 0x00000000 0x00000000 
+                //   float4x4 bt2020matrix;             // Offset:  384 Size:    64 [unused]
+                //      = 0x3f94fdf4 0x3f94fdf4 0x3f94fdf4 0x00000000 
+                //        0x00000000 0xbe020e26 0x400912cc 0x00000000 
+                //        0x3fd6ddad 0xbee1c923 0x00000000 0x00000000 
                 //        0x00000000 0x00000000 0x00000000 0x00000000 
                 //
                 // }
@@ -107,20 +140,20 @@ fxgroup
                 //   o1.x <- <VS return value>.TexCoord.x; o1.y <- <VS return value>.TexCoord.y; 
                 //   o0.x <- <VS return value>.Pos.x; o0.y <- <VS return value>.Pos.y; o0.z <- <VS return value>.Pos.z; o0.w <- <VS return value>.Pos.w
                 //
-                #line 30 "C:\github\sinx\SSPlayer\SSPlayer\sharder\colorconvert.fx"
+                #line 45 "C:\github\sinx\SSPlayer\SSPlayer\sharder\colorconvert.fx"
                 mov r0.w, l(1.000000)  // r0.w <- inPos.w
                 
-                #line 34
+                #line 49
                 mov r0.xyz, v0.xyzx
                 dp4 r1.x, r0.xyzw, cb0[4].xyzw  // r1.x <- output.Pos.x
                 dp4 r1.y, r0.xyzw, cb0[5].xyzw  // r1.y <- output.Pos.y
                 dp4 r1.z, r0.xyzw, cb0[6].xyzw  // r1.z <- output.Pos.z
                 dp4 r1.w, r0.xyzw, cb0[7].xyzw  // r1.w <- output.Pos.w
                 
-                #line 38
+                #line 53
                 mov r0.xy, v1.xyxx  // r0.x <- output.TexCoord.x; r0.y <- output.TexCoord.y
                 
-                #line 39
+                #line 54
                 mov o0.xyzw, r1.xyzw
                 mov o1.xy, r0.xyxx
                 ret 
@@ -144,13 +177,39 @@ fxgroup
                 //   int PixType;                       // Offset:  192 Size:     4
                 //   int sourcewidth;                   // Offset:  196 Size:     4 [unused]
                 //   int sourceheight;                  // Offset:  200 Size:     4 [unused]
-                //   float4 bt709yuv;                   // Offset:  208 Size:    16
+                //   int transfer;                      // Offset:  204 Size:     4
+                //   int distransfer;                   // Offset:  208 Size:     4
+                //   int primaries;                     // Offset:  212 Size:     4
+                //   int disprimaries;                  // Offset:  216 Size:     4
+                //   int fullrange;                     // Offset:  220 Size:     4 [unused]
+                //   int srcrange;                      // Offset:  224 Size:     4 [unused]
+                //   float LuminanceScale;              // Offset:  228 Size:     4
+                //   float4 bt709yuv;                   // Offset:  240 Size:    16
                 //      = 0x3d800000 0x3f000000 0x3f000000 0x00000000 
-                //   float4x4 bt709matrix;              // Offset:  224 Size:    64
+                //   float4x4 bt601matrix;              // Offset:  256 Size:    64 [unused]
+                //      = 0x3f94fdf4 0x3f94fdf4 0x3f94fdf4 0x00000000 
+                //        0x00000000 0xbec89a02 0x400119ce 0x00000000 
+                //        0x3fcc49ba 0xbf5020c5 0x00000000 0x00000000 
+                //        0x00000000 0x00000000 0x00000000 0x00000000 
+                //   float4x4 bt709matrix;              // Offset:  320 Size:    64 [unused]
                 //      = 0x3f94fdf4 0x3f94fdf4 0x3f94fdf4 0x00000000 
                 //        0x00000000 0xbe5a1cac 0x40072b02 0x00000000 
                 //        0x3fe58106 0xbf0872b0 0x00000000 0x00000000 
                 //        0x00000000 0x00000000 0x00000000 0x00000000 
+                //   float4x4 bt2020matrix;             // Offset:  384 Size:    64 [unused]
+                //      = 0x3f94fdf4 0x3f94fdf4 0x3f94fdf4 0x00000000 
+                //        0x00000000 0xbe020e26 0x400912cc 0x00000000 
+                //        0x3fd6ddad 0xbee1c923 0x00000000 0x00000000 
+                //        0x00000000 0x00000000 0x00000000 0x00000000 
+                //
+                // }
+                //
+                // cbuffer PS_COLOR_TRANSFORM
+                // {
+                //
+                //   float4x4 WhitePoint;               // Offset:    0 Size:    64
+                //   float4x4 Colorspace;               // Offset:   64 Size:    64
+                //   float4x4 TransPrimaries;           // Offset:  128 Size:    64
                 //
                 // }
                 //
@@ -164,6 +223,7 @@ fxgroup
                 // TextureSourceU                    texture  float4          2d             t1      1 
                 // TextureSourceV                    texture  float4          2d             t2      1 
                 // $Globals                          cbuffer      NA          NA            cb0      1 
+                // PS_COLOR_TRANSFORM                cbuffer      NA          NA            cb1      1 
                 //
                 //
                 //
@@ -183,262 +243,3397 @@ fxgroup
                 //
                 ps_5_0
                 dcl_globalFlags refactoringAllowed | skipOptimization
-                dcl_constantbuffer CB0[17], immediateIndexed
+                dcl_constantbuffer CB0[16], immediateIndexed
+                dcl_constantbuffer CB1[11], immediateIndexed
                 dcl_sampler s0, mode_default
                 dcl_resource_texture2d (float,float,float,float) t0
                 dcl_resource_texture2d (float,float,float,float) t1
                 dcl_resource_texture2d (float,float,float,float) t2
                 dcl_input_ps linear v1.xy
                 dcl_output o0.xyzw
-                dcl_temps 3
+                dcl_temps 10
                 //
                 // Initial variable locations:
                 //   v0.x <- input.Pos.x; v0.y <- input.Pos.y; v0.z <- input.Pos.z; v0.w <- input.Pos.w; 
                 //   v1.x <- input.TexCoord.x; v1.y <- input.TexCoord.y; 
                 //   o0.x <- <PS return value>.x; o0.y <- <PS return value>.y; o0.z <- <PS return value>.z; o0.w <- <PS return value>.w
                 //
-                #line 147 "C:\github\sinx\SSPlayer\SSPlayer\sharder\colorconvert.fx"
+                #line 382 "C:\github\sinx\SSPlayer\SSPlayer\sharder\colorconvert.fx"
                 nop 
                 
-                #line 85
-                ieq r0.x, cb0[12].x, l(6)
-                if_nz r0.x
+                #line 310
+                mov r0.xyzw, cb1[4].xyzw  // r0.x <- yuv2rgbmatrix._m00; r0.y <- yuv2rgbmatrix._m10; r0.z <- yuv2rgbmatrix._m20; r0.w <- yuv2rgbmatrix._m30
+                mov r1.xyzw, cb1[5].xyzw  // r1.x <- yuv2rgbmatrix._m01; r1.y <- yuv2rgbmatrix._m11; r1.z <- yuv2rgbmatrix._m21; r1.w <- yuv2rgbmatrix._m31
+                mov r2.xyzw, cb1[6].xyzw  // r2.x <- yuv2rgbmatrix._m02; r2.y <- yuv2rgbmatrix._m12; r2.z <- yuv2rgbmatrix._m22; r2.w <- yuv2rgbmatrix._m32
+                mov r3.xyzw, cb1[7].xyzw  // r3.x <- yuv2rgbmatrix._m03; r3.y <- yuv2rgbmatrix._m13; r3.z <- yuv2rgbmatrix._m23; r3.w <- yuv2rgbmatrix._m33
                 
-                #line 87
+                #line 311
+                ieq r4.x, cb0[12].x, l(6)
+                if_nz r4.x
+                
+                #line 313
                   nop 
                 
-                #line 44
-                  itof r0.xyz, l(0, 1, 0, 0)  // r0.x <- <PSPacked422_Reverse return value>.x; r0.y <- <PSPacked422_Reverse return value>.y; r0.z <- <PSPacked422_Reverse return value>.z
-                  mov r0.w, l(1.000000)  // r0.w <- <PSPacked422_Reverse return value>.w
+                #line 59
+                  itof r4.xyz, l(0, 1, 0, 0)  // r4.x <- <PSPacked422_Reverse return value>.x; r4.y <- <PSPacked422_Reverse return value>.y; r4.z <- <PSPacked422_Reverse return value>.z
+                  mov r4.w, l(1.000000)  // r4.w <- <PSPacked422_Reverse return value>.w
                 
-                #line 87
-                  mov r0.xyzw, r0.xyzw  // r0.x <- rgba.x; r0.y <- rgba.y; r0.z <- rgba.z; r0.w <- rgba.w
+                #line 313
+                  mov r4.xyzw, r4.xyzw  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w
                 
-                #line 88
-                  mov r1.xyzw, -cb0[13].xyzw
-                  add r0.xyzw, r0.xyzw, r1.xyzw  // r0.x <- rgbasub.x; r0.y <- rgbasub.y; r0.z <- rgbasub.z; r0.w <- rgbasub.w
+                #line 314
+                  mov r5.xyzw, -cb0[15].xyzw
+                  add r4.xyzw, r4.xyzw, r5.xyzw  // r4.x <- rgbasub.x; r4.y <- rgbasub.y; r4.z <- rgbasub.z; r4.w <- rgbasub.w
                 
-                #line 89
-                  dp4 r1.x, r0.xyzw, cb0[14].xyzw  // r1.x <- rgbarsp.x
-                  dp4 r1.y, r0.xyzw, cb0[15].xyzw  // r1.y <- rgbarsp.y
-                  dp4 r1.z, r0.xyzw, cb0[16].xyzw  // r1.z <- rgbarsp.z
+                #line 315
+                  dp4 r5.x, r4.xyzw, r0.xyzw  // r5.x <- rgbarsp.x
+                  dp4 r5.y, r4.xyzw, r1.xyzw  // r5.y <- rgbarsp.y
+                  dp4 r5.z, r4.xyzw, r2.xyzw  // r5.z <- rgbarsp.z
+                  dp4 r5.w, r4.xyzw, r3.xyzw  // r5.w <- rgbarsp.w
                 
-                #line 90
-                  itof r1.w, l(1)  // r1.w <- rgbarsp.w
+                #line 316
+                  nop 
+                  mov r5.xyzw, r5.xyzw
                 
-                #line 91
-                  mov r1.xyz, r1.xyzx  // r1.x <- <GetRGBA return value>.x; r1.y <- <GetRGBA return value>.y; r1.z <- <GetRGBA return value>.z
-                  mov r1.w, r1.w  // r1.w <- <GetRGBA return value>.w
+                #line 294
+                  nop 
+                  mov r5.xyzw, r5.xyzw
                 
-                #line 92
-                else 
+                #line 195
+                  ieq r4.x, cb0[12].w, cb0[13].x
+                  if_nz r4.x
                 
-                #line 93
-                  ieq r0.x, cb0[12].x, l(5)
-                  if_nz r0.x
+                #line 197
+                    mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
                 
-                #line 95
-                    nop 
-                
-                #line 44
-                    itof r0.xyz, l(0, 1, 0, 0)  // r0.x <- <PSPacked422_Reverse return value>.x; r0.y <- <PSPacked422_Reverse return value>.y; r0.z <- <PSPacked422_Reverse return value>.z
-                    mov r0.w, l(1.000000)  // r0.w <- <PSPacked422_Reverse return value>.w
-                
-                #line 95
-                    mov r0.xyzw, r0.xyzw  // r0.x <- rgba.x; r0.y <- rgba.y; r0.z <- rgba.z; r0.w <- rgba.w
-                
-                #line 96
-                    mov r2.xyzw, -cb0[13].xyzw
-                    add r0.xyzw, r0.xyzw, r2.xyzw  // r0.x <- rgbasub.x; r0.y <- rgbasub.y; r0.z <- rgbasub.z; r0.w <- rgbasub.w
-                
-                #line 97
-                    dp4 r1.x, r0.xyzw, cb0[14].xyzw  // r1.x <- rgbarsp.x
-                    dp4 r1.y, r0.xyzw, cb0[15].xyzw  // r1.y <- rgbarsp.y
-                    dp4 r1.z, r0.xyzw, cb0[16].xyzw  // r1.z <- rgbarsp.z
-                
-                #line 98
-                    itof r1.w, l(1)  // r1.w <- rgbarsp.w
-                
-                #line 99
-                    mov r1.xyz, r1.xyzx  // r1.x <- <GetRGBA return value>.x; r1.y <- <GetRGBA return value>.y; r1.z <- <GetRGBA return value>.z
-                    mov r1.w, r1.w  // r1.w <- <GetRGBA return value>.w
-                
-                #line 100
+                #line 198
                   else 
                 
-                #line 101
-                    ieq r0.x, cb0[12].x, l(3)
-                    if_nz r0.x
+                #line 199
+                    ieq r4.x, cb0[12].w, l(16)
+                    if_nz r4.x
                 
-                #line 103
+                #line 201
                       nop 
-                
-                #line 44
-                      itof r0.xyz, l(0, 1, 0, 0)  // r0.x <- <PSPacked422_Reverse return value>.x; r0.y <- <PSPacked422_Reverse return value>.y; r0.z <- <PSPacked422_Reverse return value>.z
-                      mov r0.w, l(1.000000)  // r0.w <- <PSPacked422_Reverse return value>.w
-                
-                #line 103
-                      mov r0.xyzw, r0.xyzw  // r0.x <- rgba.x; r0.y <- rgba.y; r0.z <- rgba.z; r0.w <- rgba.w
-                
-                #line 104
-                      mov r2.xyzw, -cb0[13].xyzw
-                      add r0.xyzw, r0.xyzw, r2.xyzw  // r0.x <- rgbasub.x; r0.y <- rgbasub.y; r0.z <- rgbasub.z; r0.w <- rgbasub.w
-                
-                #line 105
-                      dp4 r1.x, r0.xyzw, cb0[14].xyzw  // r1.x <- rgbarsp.x
-                      dp4 r1.y, r0.xyzw, cb0[15].xyzw  // r1.y <- rgbarsp.y
-                      dp4 r1.z, r0.xyzw, cb0[16].xyzw  // r1.z <- rgbarsp.z
-                
-                #line 106
-                      itof r1.w, l(1)  // r1.w <- rgbarsp.w
-                
-                #line 107
-                      mov r1.xyz, r1.xyzx  // r1.x <- <GetRGBA return value>.x; r1.y <- <GetRGBA return value>.y; r1.z <- <GetRGBA return value>.z
-                      mov r1.w, r1.w  // r1.w <- <GetRGBA return value>.w
-                
-                #line 108
-                    else 
-                
-                #line 109
-                      ieq r0.x, cb0[12].x, l(2)
-                      if_nz r0.x
-                
-                #line 111
-                        nop 
-                
-                #line 49
-                        sample_indexable(texture2d)(float,float,float,float) r0.x, v1.xyxx, t0.xyzw, s0  // r0.x <- y
-                
-                #line 51
-                        sample_indexable(texture2d)(float,float,float,float) r0.y, v1.xyxx, t1.yxzw, s0  // r0.y <- u
-                
-                #line 52
-                        sample_indexable(texture2d)(float,float,float,float) r0.z, v1.xyxx, t2.yzxw, s0  // r0.z <- v
-                
-                #line 54
-                        mov r0.w, l(1.000000)
-                        mov r0.xyzw, r0.xyzw  // r0.x <- <PSPlanar420_Reverse return value>.x; r0.y <- <PSPlanar420_Reverse return value>.y; r0.z <- <PSPlanar420_Reverse return value>.z; r0.w <- <PSPlanar420_Reverse return value>.w
-                
-                #line 111
-                        mov r0.xyzw, r0.xyzw  // r0.x <- rgba.x; r0.y <- rgba.y; r0.z <- rgba.z; r0.w <- rgba.w
-                
-                #line 112
-                        mov r2.xyzw, -cb0[13].xyzw
-                        add r0.xyzw, r0.xyzw, r2.xyzw  // r0.x <- rgbasub.x; r0.y <- rgbasub.y; r0.z <- rgbasub.z; r0.w <- rgbasub.w
-                
-                #line 113
-                        dp4 r1.x, r0.xyzw, cb0[14].xyzw  // r1.x <- rgbarsp.x
-                        dp4 r1.y, r0.xyzw, cb0[15].xyzw  // r1.y <- rgbarsp.y
-                        dp4 r1.z, r0.xyzw, cb0[16].xyzw  // r1.z <- rgbarsp.z
-                
-                #line 114
-                        itof r1.w, l(1)  // r1.w <- rgbarsp.w
-                
-                #line 115
-                        mov r1.xyz, r1.xyzx  // r1.x <- <GetRGBA return value>.x; r1.y <- <GetRGBA return value>.y; r1.z <- <GetRGBA return value>.z
-                        mov r1.w, r1.w  // r1.w <- <GetRGBA return value>.w
-                
-                #line 116
-                      else 
-                
-                #line 117
-                        ieq r0.x, cb0[12].x, l(1)
-                        if_nz r0.x
-                
-                #line 119
-                          sample_indexable(texture2d)(float,float,float,float) r1.xyzw, v1.xyxx, t0.xyzw, s0  // r1.x <- rgba.x; r1.y <- rgba.y; r1.z <- rgba.z; r1.w <- rgba.w
-                
-                #line 120
-                          mov r1.xyzw, r1.xyzw  // r1.x <- <GetRGBA return value>.x; r1.y <- <GetRGBA return value>.y; r1.z <- <GetRGBA return value>.z; r1.w <- <GetRGBA return value>.w
-                
-                #line 121
-                        else 
-                
-                #line 122
-                          ieq r0.x, cb0[12].x, l(4)
-                          if_nz r0.x
-                
-                #line 124
-                            nop 
-                
-                #line 70
-                            itof r1.xyz, l(0, 1, 0, 0)  // r1.x <- <PSPlanarRGB_Reverse return value>.x; r1.y <- <PSPlanarRGB_Reverse return value>.y; r1.z <- <PSPlanarRGB_Reverse return value>.z
-                            mov r1.w, l(1.000000)  // r1.w <- <PSPlanarRGB_Reverse return value>.w
-                
-                #line 124
-                            mov r1.xyzw, r1.xyzw  // r1.x <- rgba.x; r1.y <- rgba.y; r1.z <- rgba.z; r1.w <- rgba.w
-                
-                #line 125
-                            mov r1.xyzw, r1.xyzw  // r1.x <- <GetRGBA return value>.x; r1.y <- <GetRGBA return value>.y; r1.z <- <GetRGBA return value>.z; r1.w <- <GetRGBA return value>.w
-                
-                #line 126
-                          else 
-                
-                #line 127
-                            ieq r0.x, cb0[12].x, l(7)
-                            if_nz r0.x
-                
-                #line 129
-                              sample_indexable(texture2d)(float,float,float,float) r1.xyzw, v1.xyxx, t0.xyzw, s0  // r1.x <- rgba.x; r1.y <- rgba.y; r1.z <- rgba.z; r1.w <- rgba.w
+                      mov r5.xyzw, r5.xyzw
                 
                 #line 130
-                              mov r1.xyzw, r1.xyzw  // r1.x <- <GetRGBA return value>.x; r1.y <- <GetRGBA return value>.y; r1.z <- <GetRGBA return value>.z; r1.w <- <GetRGBA return value>.w
+                      mov r4.x, l(0.835938)  // r4.x <- ST2084_c1
                 
                 #line 131
-                            else 
+                      mov r4.y, l(18.851562)  // r4.y <- ST2084_c2
                 
                 #line 132
-                              ieq r0.x, cb0[12].x, l(8)
-                              if_nz r0.x
+                      mov r4.z, l(18.687500)  // r4.z <- ST2084_c3
+                
+                #line 133
+                      itof r6.xyzw, l(0, 0, 0, 0)
+                      max r6.xyzw, r5.xyzw, r6.xyzw
+                      log r6.xyzw, r6.xyzw
+                      mul r6.xyzw, r6.xyzw, l(0.012683, 0.012683, 0.012683, 0.012683)
+                      exp r6.xyzw, r6.xyzw  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z; r6.w <- rgb.w
                 
                 #line 134
-                                nop 
-                
-                #line 60
-                                sample_indexable(texture2d)(float,float,float,float) r0.x, v1.xyxx, t0.xyzw, s0
-                                itof r0.y, l(64)
-                                mul r0.x, r0.y, r0.x  // r0.x <- y
-                
-                #line 62
-                                sample_indexable(texture2d)(float,float,float,float) r2.x, v1.xyxx, t1.xyzw, s0
-                                itof r2.y, l(64)
-                                mul r0.y, r2.y, r2.x  // r0.y <- u
-                
-                #line 63
-                                sample_indexable(texture2d)(float,float,float,float) r2.x, v1.xyxx, t2.xyzw, s0
-                                itof r2.y, l(64)
-                                mul r0.z, r2.y, r2.x  // r0.z <- v
-                
-                #line 65
-                                mov r0.w, l(1.000000)
-                                mov r0.xyzw, r0.xyzw  // r0.x <- <PSPlanar42010_Reverse return value>.x; r0.y <- <PSPlanar42010_Reverse return value>.y; r0.z <- <PSPlanar42010_Reverse return value>.z; r0.w <- <PSPlanar42010_Reverse return value>.w
-                
-                #line 134
-                                mov r0.xyzw, r0.xyzw  // r0.x <- rgba.x; r0.y <- rgba.y; r0.z <- rgba.z; r0.w <- rgba.w
+                      mov r7.xyzw, -r4.xxxx
+                      add r7.xyzw, r6.xyzw, r7.xyzw
+                      max r7.xyzw, r7.xyzw, l(0.000000, 0.000000, 0.000000, 0.000000)
+                      mul r6.xyzw, r4.zzzz, r6.xyzw
+                      mov r6.xyzw, -r6.xyzw
+                      add r4.xyzw, r4.yyyy, r6.xyzw
+                      div r4.xyzw, r7.xyzw, r4.xyzw  // r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
                 
                 #line 135
-                                mov r2.xyzw, -cb0[13].xyzw
-                                add r0.xyzw, r0.xyzw, r2.xyzw  // r0.x <- rgbasub.x; r0.y <- rgbasub.y; r0.z <- rgbasub.z; r0.w <- rgbasub.w
+                      log r4.xyzw, r4.xyzw
+                      mul r4.xyzw, r4.xyzw, l(6.277395, 6.277395, 6.277395, 6.277395)
+                      exp r4.xyzw, r4.xyzw  // r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
                 
                 #line 136
-                                dp4 r1.x, r0.xyzw, cb0[14].xyzw  // r1.x <- rgbarsp.x
-                                dp4 r1.y, r0.xyzw, cb0[15].xyzw  // r1.y <- rgbarsp.y
-                                dp4 r1.z, r0.xyzw, cb0[16].xyzw  // r1.z <- rgbarsp.z
+                      itof r6.xyzw, l(10000, 10000, 10000, 10000)
+                      mul r5.xyzw, r4.xyzw, r6.xyzw  // r5.x <- <ST2084TOLinear return value>.x; r5.y <- <ST2084TOLinear return value>.y; r5.z <- <ST2084TOLinear return value>.z; r5.w <- <ST2084TOLinear return value>.w
                 
-                #line 137
-                                itof r1.w, l(1)  // r1.w <- rgbarsp.w
+                #line 201
+                      mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
                 
-                #line 138
-                                mov r1.xyz, r1.xyzx  // r1.x <- <GetRGBA return value>.x; r1.y <- <GetRGBA return value>.y; r1.z <- <GetRGBA return value>.z
-                                mov r1.w, r1.w  // r1.w <- <GetRGBA return value>.w
+                #line 202
+                    else   // Prior locations: r4.y <- rgbasub.y; r4.z <- rgbasub.z; r4.w <- rgbasub.w; r5.x <- rgbarsp.x; r5.y <- rgbarsp.y; r5.z <- rgbarsp.z; r5.w <- rgbarsp.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
                 
-                #line 139
+                #line 203
+                      ieq r4.x, cb0[12].w, l(1)
+                      if_nz r4.x
+                
+                #line 205
+                        nop 
+                        mov r5.xyzw, r5.xyzw
+                
+                #line 151
+                        log r4.xyzw, r5.xyzw
+                        mul r4.xyzw, r4.xyzw, l(2.222222, 2.222222, 2.222222, 2.222222)
+                        exp r5.xyzw, r4.xyzw  // r5.x <- <BT709TOLinear return value>.x; r5.y <- <BT709TOLinear return value>.y; r5.z <- <BT709TOLinear return value>.z; r5.w <- <BT709TOLinear return value>.w
+                
+                #line 205
+                        mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
+                
+                #line 206
+                      else   // Prior locations: r4.y <- rgbasub.y; r4.z <- rgbasub.z; r4.w <- rgbasub.w; r5.x <- rgbarsp.x; r5.y <- rgbarsp.y; r5.z <- rgbarsp.z; r5.w <- rgbarsp.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 209
+                        mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
+                
+                #line 210
+                      endif 
+                    endif 
+                  endif 
+                
+                #line 294
+                  mov r5.xyzw, r5.xyzw  // r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 295
+                  nop 
+                  mov r5.xyzw, r5.xyzw
+                
+                #line 221
+                  ine r4.x, cb0[13].z, cb0[13].y
+                  if_nz r4.x
+                
+                #line 223
+                    nop 
+                    mov r5.xyzw, r5.xyzw
+                
+                #line 216
+                    dp4 r4.x, r5.xyzw, cb1[8].xyzw
+                    dp4 r4.y, r5.xyzw, cb1[9].xyzw
+                    dp4 r4.z, r5.xyzw, cb1[10].xyzw
+                    itof r6.xyz, l(0, 0, 0, 0)
+                    max r5.xyz, r4.xyzx, r6.xyzx  // r5.x <- <PrimariesTransform return value>.x; r5.y <- <PrimariesTransform return value>.y; r5.z <- <PrimariesTransform return value>.z
+                
+                #line 223
+                    mov r5.xyz, r5.xyzx  // r5.x <- <transformPrimaries return value>.x; r5.y <- <transformPrimaries return value>.y; r5.z <- <transformPrimaries return value>.z
+                
+                #line 224
+                  else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 227
+                    mov r5.xyz, r5.xyzx  // r5.x <- <transformPrimaries return value>.x; r5.y <- <transformPrimaries return value>.y; r5.z <- <transformPrimaries return value>.z
+                
+                #line 228
+                  endif 
+                
+                #line 295
+                  mov r5.xyz, r5.xyzx
+                
+                #line 296
+                  nop 
+                  mov r5.xyz, r5.xyzx
+                
+                #line 233
+                  ieq r4.x, cb0[13].x, l(1)
+                  ieq r4.y, cb0[13].x, l(4)
+                  or r4.x, r4.y, r4.x
+                  if_nz r4.x
+                
+                #line 235
+                    ieq r4.x, cb0[12].w, l(16)
+                    if_nz r4.x
+                
+                #line 237
+                      nop 
+                      mov r5.xyz, r5.xyzx
+                
+                #line 188
+                      nop 
+                      mov r4.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                      mov r4.w, l(0.150000)  // r4.w <- A
+                      mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                      mul r6.xyz, r4.xyzx, r4.wwww
+                      add r6.xyz, r6.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                      mul r6.xyz, r4.xyzx, r6.xyzx
+                      add r6.xyz, r6.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                      mul r7.xyz, r4.xyzx, r4.wwww
+                      add r7.xyz, r5.wwww, r7.xyzx
+                      mul r4.xyz, r4.xyzx, r7.xyzx
+                      add r4.xyz, r4.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                      div r4.xyz, r6.xyzx, r4.xyzx
+                      mov r6.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                      add r4.xyz, r4.xyzx, r6.xyzx  // r4.x <- <hable return value>.x; r4.y <- <hable return value>.y; r4.z <- <hable return value>.z
+                
+                #line 188
+                      mov r4.xyz, r4.xyzx  // r4.x <- HABLE_DIV.x; r4.y <- HABLE_DIV.y; r4.z <- HABLE_DIV.z
+                
+                #line 189
+                      nop 
+                      mul r6.xyz, r5.xyzx, cb0[14].yyyy
+                
+                #line 182
+                      mov r4.w, l(0.150000)
+                      mov r5.w, l(0.500000)
+                
+                #line 183
+                      mul r7.xyz, r6.xyzx, r4.wwww
+                      add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                      mul r7.xyz, r6.xyzx, r7.xyzx
+                      add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                      mul r8.xyz, r6.xyzx, r4.wwww
+                      add r8.xyz, r5.wwww, r8.xyzx
+                      mul r6.xyz, r6.xyzx, r8.xyzx
+                      add r6.xyz, r6.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                      div r6.xyz, r7.xyzx, r6.xyzx
+                      mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                      add r6.xyz, r6.xyzx, r7.xyzx  // r6.x <- <hable return value>.x; r6.y <- <hable return value>.y; r6.z <- <hable return value>.z
+                
+                #line 189
+                      div r5.xyz, r6.xyzx, r4.xyzx  // r5.x <- rgba.x; r5.y <- rgba.y; r5.z <- rgba.z
+                
+                #line 190
+                      mov r5.xyz, r5.xyzx  // r5.x <- <HDRToneMapping return value>.x; r5.y <- <HDRToneMapping return value>.y; r5.z <- <HDRToneMapping return value>.z
+                
+                #line 237
+                      mov r5.xyz, r5.xyzx  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 238
+                    else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 239
+                      ieq r4.x, cb0[12].w, l(18)
+                      if_nz r4.x
+                
+                #line 241
+                        nop 
+                        mov r5.xyz, r5.xyzx
+                
+                #line 188
+                        nop 
+                        mov r4.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                        mov r4.w, l(0.150000)  // r4.w <- A
+                        mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                        mul r6.xyz, r4.xyzx, r4.wwww
+                        add r6.xyz, r6.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                        mul r6.xyz, r4.xyzx, r6.xyzx
+                        add r6.xyz, r6.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                        mul r7.xyz, r4.xyzx, r4.wwww
+                        add r7.xyz, r5.wwww, r7.xyzx
+                        mul r4.xyz, r4.xyzx, r7.xyzx
+                        add r4.xyz, r4.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                        div r4.xyz, r6.xyzx, r4.xyzx
+                        mov r6.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                        add r4.xyz, r4.xyzx, r6.xyzx  // r4.x <- <hable return value>.x; r4.y <- <hable return value>.y; r4.z <- <hable return value>.z
+                
+                #line 188
+                        mov r4.xyz, r4.xyzx  // r4.x <- HABLE_DIV.x; r4.y <- HABLE_DIV.y; r4.z <- HABLE_DIV.z
+                
+                #line 189
+                        nop 
+                        mul r6.xyz, r5.xyzx, cb0[14].yyyy
+                
+                #line 182
+                        mov r4.w, l(0.150000)
+                        mov r5.w, l(0.500000)
+                
+                #line 183
+                        mul r7.xyz, r6.xyzx, r4.wwww
+                        add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                        mul r7.xyz, r6.xyzx, r7.xyzx
+                        add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                        mul r8.xyz, r6.xyzx, r4.wwww
+                        add r8.xyz, r5.wwww, r8.xyzx
+                        mul r6.xyz, r6.xyzx, r8.xyzx
+                        add r6.xyz, r6.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                        div r6.xyz, r7.xyzx, r6.xyzx
+                        mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                        add r6.xyz, r6.xyzx, r7.xyzx  // r6.x <- <hable return value>.x; r6.y <- <hable return value>.y; r6.z <- <hable return value>.z
+                
+                #line 189
+                        div r5.xyz, r6.xyzx, r4.xyzx  // r5.x <- rgba.x; r5.y <- rgba.y; r5.z <- rgba.z
+                
+                #line 190
+                        mov r5.xyz, r5.xyzx  // r5.x <- <HDRToneMapping return value>.x; r5.y <- <HDRToneMapping return value>.y; r5.z <- <HDRToneMapping return value>.z
+                
+                #line 241
+                        mov r5.xyz, r5.xyzx  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 242
+                      else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 245
+                        mul r5.xyz, r5.xyzx, cb0[14].yyyy  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 246
+                      endif 
+                    endif 
+                
+                #line 247
+                  else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 250
+                    mov r5.xyz, r5.xyzx  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 251
+                  endif 
+                
+                #line 296
+                  mov r5.xyz, r5.xyzx
+                
+                #line 297
+                  nop 
+                  mov r5.xyz, r5.xyzx
+                
+                #line 261
+                  ieq r4.x, cb0[12].w, cb0[13].x
+                  if_nz r4.x
+                
+                #line 263
+                    mov r6.xyz, r5.xyzx
+                
+                #line 264
+                  endif   // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 265
+                  if_z r4.x
+                    ieq r4.x, cb0[13].x, l(16)
+                    if_nz r4.x
+                
+                #line 267
+                      nop 
+                      mov r5.xyz, r5.xyzx
+                
+                #line 169
+                      mov r4.x, l(0.159302)  // r4.x <- ST2084_m1
+                
+                #line 170
+                      mov r4.y, l(78.843750)  // r4.y <- ST2084_m2
+                
+                #line 171
+                      mov r4.z, l(0.835938)  // r4.z <- ST2084_c1
+                
+                #line 172
+                      mov r4.w, l(18.851562)  // r4.w <- ST2084_c2
+                
+                #line 173
+                      mov r5.w, l(18.687500)  // r5.w <- ST2084_c3
+                
+                #line 174
+                      itof r7.xyz, l(1000, 1000, 1000, 0)
+                      div r7.xyz, r5.xyzx, r7.xyzx
+                      log r7.xyz, r7.xyzx
+                      mul r7.xyz, r4.xxxx, r7.xyzx
+                      exp r7.xyz, r7.xyzx  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z
+                
+                #line 175
+                      mul r8.xyz, r4.wwww, r7.xyzx
+                      add r4.xzw, r4.zzzz, r8.xxyz
+                      itof r8.xyz, l(1, 1, 1, 0)
+                      mul r7.xyz, r5.wwww, r7.xyzx
+                      add r7.xyz, r7.xyzx, r8.xyzx
+                      div r4.xzw, r4.xxzw, r7.xxyz  // r4.x <- rgb.x; r4.z <- rgb.y; r4.w <- rgb.z
+                
+                #line 176
+                      log r4.xzw, r4.xxzw
+                      mul r4.xyz, r4.xzwx, r4.yyyy
+                      exp r6.xyz, r4.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 177
+                      mov r6.xyz, r6.xyzx  // r6.x <- <LineTOST2084 return value>.x; r6.y <- <LineTOST2084 return value>.y; r6.z <- <LineTOST2084 return value>.z
+                
+                #line 267
+                      mov r6.xyz, r6.xyzx  // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 268
+                    else 
+                
+                #line 269
+                      ieq r4.x, cb0[13].x, l(18)
+                      if_nz r4.x
+                
+                #line 271
+                        mov r6.xyz, r5.xyzx
+                
+                #line 272
+                      else 
+                
+                #line 273
+                        ieq r4.x, cb0[13].x, l(1)
+                        if_nz r4.x
+                
+                #line 275
+                          log r4.xyz, r5.xyzx
+                          mul r4.xyz, r4.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                          exp r6.xyz, r4.xyzx
+                
+                #line 276
+                        else 
+                
+                #line 277
+                          ieq r4.x, cb0[13].x, l(4)
+                          if_nz r4.x
+                
+                #line 279
+                            log r4.xyz, r5.xyzx
+                            mul r4.xyz, r4.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                            exp r6.xyz, r4.xyzx
+                
+                #line 280
+                          else 
+                
+                #line 283
+                            mov r6.xyz, r5.xyzx
+                
+                #line 284
+                          endif 
+                        endif 
+                      endif 
+                    endif 
+                  endif 
+                
+                #line 297
+                  mov r6.xyz, r6.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 298
+                  nop 
+                  mov r6.xyz, r6.xyzx
+                
+                #line 256
+                  mov r6.xyz, r6.xyzx  // r6.x <- <adjustRange return value>.x; r6.y <- <adjustRange return value>.y; r6.z <- <adjustRange return value>.z
+                
+                #line 298
+                  mov r6.xyz, r6.xyzx
+                
+                #line 299
+                  nop 
+                  mov r6.xyz, r6.xyzx
+                
+                #line 289
+                  mov r6.xyz, r6.xyzx  // r6.x <- <reorderPlanes return value>.x; r6.y <- <reorderPlanes return value>.y; r6.z <- <reorderPlanes return value>.z
+                
+                #line 299
+                  mov r6.xyz, r6.xyzx
+                
+                #line 300
+                  mov r6.xyz, r6.xyzx  // r6.x <- <RenderFloat return value>.x; r6.y <- <RenderFloat return value>.y; r6.z <- <RenderFloat return value>.z
+                
+                #line 316
+                  mov r6.xyz, r6.xyzx  // r6.x <- rgbarsp.x; r6.y <- rgbarsp.y; r6.z <- rgbarsp.z
+                
+                #line 317
+                  itof r6.w, l(1)  // r6.w <- rgbarsp.w
+                
+                #line 318
+                  mov r6.xyz, r6.xyzx  // r6.x <- <GetRGBA return value>.x; r6.y <- <GetRGBA return value>.y; r6.z <- <GetRGBA return value>.z
+                  mov r6.w, r6.w  // r6.w <- <GetRGBA return value>.w
+                
+                #line 319
+                else 
+                
+                #line 320
+                  ieq r4.x, cb0[12].x, l(5)
+                  if_nz r4.x
+                
+                #line 322
+                    nop 
+                
+                #line 59
+                    itof r4.xyz, l(0, 1, 0, 0)  // r4.x <- <PSPacked422_Reverse return value>.x; r4.y <- <PSPacked422_Reverse return value>.y; r4.z <- <PSPacked422_Reverse return value>.z
+                    mov r4.w, l(1.000000)  // r4.w <- <PSPacked422_Reverse return value>.w
+                
+                #line 322
+                    mov r4.xyzw, r4.xyzw  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w
+                
+                #line 323
+                    mov r5.xyzw, -cb0[15].xyzw
+                    add r4.xyzw, r4.xyzw, r5.xyzw  // r4.x <- rgbasub.x; r4.y <- rgbasub.y; r4.z <- rgbasub.z; r4.w <- rgbasub.w
+                
+                #line 324
+                    dp4 r5.x, r4.xyzw, r0.xyzw  // r5.x <- rgbarsp.x
+                    dp4 r5.y, r4.xyzw, r1.xyzw  // r5.y <- rgbarsp.y
+                    dp4 r5.z, r4.xyzw, r2.xyzw  // r5.z <- rgbarsp.z
+                    dp4 r5.w, r4.xyzw, r3.xyzw  // r5.w <- rgbarsp.w
+                
+                #line 325
+                    nop 
+                    mov r5.xyzw, r5.xyzw
+                
+                #line 294
+                    nop 
+                    mov r5.xyzw, r5.xyzw
+                
+                #line 195
+                    ieq r4.x, cb0[12].w, cb0[13].x
+                    if_nz r4.x
+                
+                #line 197
+                      mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
+                
+                #line 198
+                    else 
+                
+                #line 199
+                      ieq r4.x, cb0[12].w, l(16)
+                      if_nz r4.x
+                
+                #line 201
+                        nop 
+                        mov r5.xyzw, r5.xyzw
+                
+                #line 130
+                        mov r4.x, l(0.835938)  // r4.x <- ST2084_c1
+                
+                #line 131
+                        mov r4.y, l(18.851562)  // r4.y <- ST2084_c2
+                
+                #line 132
+                        mov r4.z, l(18.687500)  // r4.z <- ST2084_c3
+                
+                #line 133
+                        itof r7.xyzw, l(0, 0, 0, 0)
+                        max r7.xyzw, r5.xyzw, r7.xyzw
+                        log r7.xyzw, r7.xyzw
+                        mul r7.xyzw, r7.xyzw, l(0.012683, 0.012683, 0.012683, 0.012683)
+                        exp r7.xyzw, r7.xyzw  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z; r7.w <- rgb.w
+                
+                #line 134
+                        mov r8.xyzw, -r4.xxxx
+                        add r8.xyzw, r7.xyzw, r8.xyzw
+                        max r8.xyzw, r8.xyzw, l(0.000000, 0.000000, 0.000000, 0.000000)
+                        mul r7.xyzw, r4.zzzz, r7.xyzw
+                        mov r7.xyzw, -r7.xyzw
+                        add r4.xyzw, r4.yyyy, r7.xyzw
+                        div r4.xyzw, r8.xyzw, r4.xyzw  // r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 135
+                        log r4.xyzw, r4.xyzw
+                        mul r4.xyzw, r4.xyzw, l(6.277395, 6.277395, 6.277395, 6.277395)
+                        exp r4.xyzw, r4.xyzw  // r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 136
+                        itof r7.xyzw, l(10000, 10000, 10000, 10000)
+                        mul r5.xyzw, r4.xyzw, r7.xyzw  // r5.x <- <ST2084TOLinear return value>.x; r5.y <- <ST2084TOLinear return value>.y; r5.z <- <ST2084TOLinear return value>.z; r5.w <- <ST2084TOLinear return value>.w
+                
+                #line 201
+                        mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
+                
+                #line 202
+                      else   // Prior locations: r4.y <- rgbasub.y; r4.z <- rgbasub.z; r4.w <- rgbasub.w; r5.x <- rgbarsp.x; r5.y <- rgbarsp.y; r5.z <- rgbarsp.z; r5.w <- rgbarsp.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 203
+                        ieq r4.x, cb0[12].w, l(1)
+                        if_nz r4.x
+                
+                #line 205
+                          nop 
+                          mov r5.xyzw, r5.xyzw
+                
+                #line 151
+                          log r4.xyzw, r5.xyzw
+                          mul r4.xyzw, r4.xyzw, l(2.222222, 2.222222, 2.222222, 2.222222)
+                          exp r5.xyzw, r4.xyzw  // r5.x <- <BT709TOLinear return value>.x; r5.y <- <BT709TOLinear return value>.y; r5.z <- <BT709TOLinear return value>.z; r5.w <- <BT709TOLinear return value>.w
+                
+                #line 205
+                          mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
+                
+                #line 206
+                        else   // Prior locations: r4.y <- rgbasub.y; r4.z <- rgbasub.z; r4.w <- rgbasub.w; r5.x <- rgbarsp.x; r5.y <- rgbarsp.y; r5.z <- rgbarsp.z; r5.w <- rgbarsp.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 209
+                          mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
+                
+                #line 210
+                        endif 
+                      endif 
+                    endif 
+                
+                #line 294
+                    mov r5.xyzw, r5.xyzw  // r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 295
+                    nop 
+                    mov r5.xyzw, r5.xyzw
+                
+                #line 221
+                    ine r4.x, cb0[13].z, cb0[13].y
+                    if_nz r4.x
+                
+                #line 223
+                      nop 
+                      mov r5.xyzw, r5.xyzw
+                
+                #line 216
+                      dp4 r4.x, r5.xyzw, cb1[8].xyzw
+                      dp4 r4.y, r5.xyzw, cb1[9].xyzw
+                      dp4 r4.z, r5.xyzw, cb1[10].xyzw
+                      itof r7.xyz, l(0, 0, 0, 0)
+                      max r5.xyz, r4.xyzx, r7.xyzx  // r5.x <- <PrimariesTransform return value>.x; r5.y <- <PrimariesTransform return value>.y; r5.z <- <PrimariesTransform return value>.z
+                
+                #line 223
+                      mov r5.xyz, r5.xyzx  // r5.x <- <transformPrimaries return value>.x; r5.y <- <transformPrimaries return value>.y; r5.z <- <transformPrimaries return value>.z
+                
+                #line 224
+                    else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 227
+                      mov r5.xyz, r5.xyzx  // r5.x <- <transformPrimaries return value>.x; r5.y <- <transformPrimaries return value>.y; r5.z <- <transformPrimaries return value>.z
+                
+                #line 228
+                    endif 
+                
+                #line 295
+                    mov r5.xyz, r5.xyzx
+                
+                #line 296
+                    nop 
+                    mov r5.xyz, r5.xyzx
+                
+                #line 233
+                    ieq r4.x, cb0[13].x, l(1)
+                    ieq r4.y, cb0[13].x, l(4)
+                    or r4.x, r4.y, r4.x
+                    if_nz r4.x
+                
+                #line 235
+                      ieq r4.x, cb0[12].w, l(16)
+                      if_nz r4.x
+                
+                #line 237
+                        nop 
+                        mov r5.xyz, r5.xyzx
+                
+                #line 188
+                        nop 
+                        mov r4.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                        mov r4.w, l(0.150000)  // r4.w <- A
+                        mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                        mul r7.xyz, r4.xyzx, r4.wwww
+                        add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                        mul r7.xyz, r4.xyzx, r7.xyzx
+                        add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                        mul r8.xyz, r4.xyzx, r4.wwww
+                        add r8.xyz, r5.wwww, r8.xyzx
+                        mul r4.xyz, r4.xyzx, r8.xyzx
+                        add r4.xyz, r4.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                        div r4.xyz, r7.xyzx, r4.xyzx
+                        mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                        add r4.xyz, r4.xyzx, r7.xyzx  // r4.x <- <hable return value>.x; r4.y <- <hable return value>.y; r4.z <- <hable return value>.z
+                
+                #line 188
+                        mov r4.xyz, r4.xyzx  // r4.x <- HABLE_DIV.x; r4.y <- HABLE_DIV.y; r4.z <- HABLE_DIV.z
+                
+                #line 189
+                        nop 
+                        mul r7.xyz, r5.xyzx, cb0[14].yyyy
+                
+                #line 182
+                        mov r4.w, l(0.150000)
+                        mov r5.w, l(0.500000)
+                
+                #line 183
+                        mul r8.xyz, r7.xyzx, r4.wwww
+                        add r8.xyz, r8.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                        mul r8.xyz, r7.xyzx, r8.xyzx
+                        add r8.xyz, r8.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                        mul r9.xyz, r7.xyzx, r4.wwww
+                        add r9.xyz, r5.wwww, r9.xyzx
+                        mul r7.xyz, r7.xyzx, r9.xyzx
+                        add r7.xyz, r7.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                        div r7.xyz, r8.xyzx, r7.xyzx
+                        mov r8.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                        add r7.xyz, r7.xyzx, r8.xyzx  // r7.x <- <hable return value>.x; r7.y <- <hable return value>.y; r7.z <- <hable return value>.z
+                
+                #line 189
+                        div r5.xyz, r7.xyzx, r4.xyzx  // r5.x <- rgba.x; r5.y <- rgba.y; r5.z <- rgba.z
+                
+                #line 190
+                        mov r5.xyz, r5.xyzx  // r5.x <- <HDRToneMapping return value>.x; r5.y <- <HDRToneMapping return value>.y; r5.z <- <HDRToneMapping return value>.z
+                
+                #line 237
+                        mov r5.xyz, r5.xyzx  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 238
+                      else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 239
+                        ieq r4.x, cb0[12].w, l(18)
+                        if_nz r4.x
+                
+                #line 241
+                          nop 
+                          mov r5.xyz, r5.xyzx
+                
+                #line 188
+                          nop 
+                          mov r4.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                          mov r4.w, l(0.150000)  // r4.w <- A
+                          mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                          mul r7.xyz, r4.xyzx, r4.wwww
+                          add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                          mul r7.xyz, r4.xyzx, r7.xyzx
+                          add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                          mul r8.xyz, r4.xyzx, r4.wwww
+                          add r8.xyz, r5.wwww, r8.xyzx
+                          mul r4.xyz, r4.xyzx, r8.xyzx
+                          add r4.xyz, r4.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                          div r4.xyz, r7.xyzx, r4.xyzx
+                          mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                          add r4.xyz, r4.xyzx, r7.xyzx  // r4.x <- <hable return value>.x; r4.y <- <hable return value>.y; r4.z <- <hable return value>.z
+                
+                #line 188
+                          mov r4.xyz, r4.xyzx  // r4.x <- HABLE_DIV.x; r4.y <- HABLE_DIV.y; r4.z <- HABLE_DIV.z
+                
+                #line 189
+                          nop 
+                          mul r7.xyz, r5.xyzx, cb0[14].yyyy
+                
+                #line 182
+                          mov r4.w, l(0.150000)
+                          mov r5.w, l(0.500000)
+                
+                #line 183
+                          mul r8.xyz, r7.xyzx, r4.wwww
+                          add r8.xyz, r8.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                          mul r8.xyz, r7.xyzx, r8.xyzx
+                          add r8.xyz, r8.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                          mul r9.xyz, r7.xyzx, r4.wwww
+                          add r9.xyz, r5.wwww, r9.xyzx
+                          mul r7.xyz, r7.xyzx, r9.xyzx
+                          add r7.xyz, r7.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                          div r7.xyz, r8.xyzx, r7.xyzx
+                          mov r8.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                          add r7.xyz, r7.xyzx, r8.xyzx  // r7.x <- <hable return value>.x; r7.y <- <hable return value>.y; r7.z <- <hable return value>.z
+                
+                #line 189
+                          div r5.xyz, r7.xyzx, r4.xyzx  // r5.x <- rgba.x; r5.y <- rgba.y; r5.z <- rgba.z
+                
+                #line 190
+                          mov r5.xyz, r5.xyzx  // r5.x <- <HDRToneMapping return value>.x; r5.y <- <HDRToneMapping return value>.y; r5.z <- <HDRToneMapping return value>.z
+                
+                #line 241
+                          mov r5.xyz, r5.xyzx  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 242
+                        else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 245
+                          mul r5.xyz, r5.xyzx, cb0[14].yyyy  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 246
+                        endif 
+                      endif 
+                
+                #line 247
+                    else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 250
+                      mov r5.xyz, r5.xyzx  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 251
+                    endif 
+                
+                #line 296
+                    mov r5.xyz, r5.xyzx
+                
+                #line 297
+                    nop 
+                    mov r5.xyz, r5.xyzx
+                
+                #line 261
+                    ieq r4.x, cb0[12].w, cb0[13].x
+                    if_nz r4.x
+                
+                #line 263
+                      mov r6.xyz, r5.xyzx
+                
+                #line 264
+                    endif   // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 265
+                    if_z r4.x
+                      ieq r4.x, cb0[13].x, l(16)
+                      if_nz r4.x
+                
+                #line 267
+                        nop 
+                        mov r5.xyz, r5.xyzx
+                
+                #line 169
+                        mov r4.x, l(0.159302)  // r4.x <- ST2084_m1
+                
+                #line 170
+                        mov r4.y, l(78.843750)  // r4.y <- ST2084_m2
+                
+                #line 171
+                        mov r4.z, l(0.835938)  // r4.z <- ST2084_c1
+                
+                #line 172
+                        mov r4.w, l(18.851562)  // r4.w <- ST2084_c2
+                
+                #line 173
+                        mov r5.w, l(18.687500)  // r5.w <- ST2084_c3
+                
+                #line 174
+                        itof r7.xyz, l(1000, 1000, 1000, 0)
+                        div r7.xyz, r5.xyzx, r7.xyzx
+                        log r7.xyz, r7.xyzx
+                        mul r7.xyz, r4.xxxx, r7.xyzx
+                        exp r7.xyz, r7.xyzx  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z
+                
+                #line 175
+                        mul r8.xyz, r4.wwww, r7.xyzx
+                        add r4.xzw, r4.zzzz, r8.xxyz
+                        itof r8.xyz, l(1, 1, 1, 0)
+                        mul r7.xyz, r5.wwww, r7.xyzx
+                        add r7.xyz, r7.xyzx, r8.xyzx
+                        div r4.xzw, r4.xxzw, r7.xxyz  // r4.x <- rgb.x; r4.z <- rgb.y; r4.w <- rgb.z
+                
+                #line 176
+                        log r4.xzw, r4.xxzw
+                        mul r4.xyz, r4.xzwx, r4.yyyy
+                        exp r6.xyz, r4.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 177
+                        mov r6.xyz, r6.xyzx  // r6.x <- <LineTOST2084 return value>.x; r6.y <- <LineTOST2084 return value>.y; r6.z <- <LineTOST2084 return value>.z
+                
+                #line 267
+                        mov r6.xyz, r6.xyzx  // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 268
+                      else 
+                
+                #line 269
+                        ieq r4.x, cb0[13].x, l(18)
+                        if_nz r4.x
+                
+                #line 271
+                          mov r6.xyz, r5.xyzx
+                
+                #line 272
+                        else 
+                
+                #line 273
+                          ieq r4.x, cb0[13].x, l(1)
+                          if_nz r4.x
+                
+                #line 275
+                            log r4.xyz, r5.xyzx
+                            mul r4.xyz, r4.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                            exp r6.xyz, r4.xyzx
+                
+                #line 276
+                          else 
+                
+                #line 277
+                            ieq r4.x, cb0[13].x, l(4)
+                            if_nz r4.x
+                
+                #line 279
+                              log r4.xyz, r5.xyzx
+                              mul r4.xyz, r4.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                              exp r6.xyz, r4.xyzx
+                
+                #line 280
+                            else 
+                
+                #line 283
+                              mov r6.xyz, r5.xyzx
+                
+                #line 284
+                            endif 
+                          endif 
+                        endif 
+                      endif 
+                    endif 
+                
+                #line 297
+                    mov r6.xyz, r6.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 298
+                    nop 
+                    mov r6.xyz, r6.xyzx
+                
+                #line 256
+                    mov r6.xyz, r6.xyzx  // r6.x <- <adjustRange return value>.x; r6.y <- <adjustRange return value>.y; r6.z <- <adjustRange return value>.z
+                
+                #line 298
+                    mov r6.xyz, r6.xyzx
+                
+                #line 299
+                    nop 
+                    mov r6.xyz, r6.xyzx
+                
+                #line 289
+                    mov r6.xyz, r6.xyzx  // r6.x <- <reorderPlanes return value>.x; r6.y <- <reorderPlanes return value>.y; r6.z <- <reorderPlanes return value>.z
+                
+                #line 299
+                    mov r6.xyz, r6.xyzx
+                
+                #line 300
+                    mov r6.xyz, r6.xyzx  // r6.x <- <RenderFloat return value>.x; r6.y <- <RenderFloat return value>.y; r6.z <- <RenderFloat return value>.z
+                
+                #line 325
+                    mov r6.xyz, r6.xyzx  // r6.x <- rgbarsp.x; r6.y <- rgbarsp.y; r6.z <- rgbarsp.z
+                
+                #line 326
+                    itof r6.w, l(1)  // r6.w <- rgbarsp.w
+                
+                #line 327
+                    mov r6.xyz, r6.xyzx  // r6.x <- <GetRGBA return value>.x; r6.y <- <GetRGBA return value>.y; r6.z <- <GetRGBA return value>.z
+                    mov r6.w, r6.w  // r6.w <- <GetRGBA return value>.w
+                
+                #line 328
+                  else 
+                
+                #line 329
+                    ieq r4.x, cb0[12].x, l(3)
+                    if_nz r4.x
+                
+                #line 331
+                      nop 
+                
+                #line 59
+                      itof r4.xyz, l(0, 1, 0, 0)  // r4.x <- <PSPacked422_Reverse return value>.x; r4.y <- <PSPacked422_Reverse return value>.y; r4.z <- <PSPacked422_Reverse return value>.z
+                      mov r4.w, l(1.000000)  // r4.w <- <PSPacked422_Reverse return value>.w
+                
+                #line 331
+                      mov r4.xyzw, r4.xyzw  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w
+                
+                #line 332
+                      mov r5.xyzw, -cb0[15].xyzw
+                      add r4.xyzw, r4.xyzw, r5.xyzw  // r4.x <- rgbasub.x; r4.y <- rgbasub.y; r4.z <- rgbasub.z; r4.w <- rgbasub.w
+                
+                #line 333
+                      dp4 r5.x, r4.xyzw, r0.xyzw  // r5.x <- rgbarsp.x
+                      dp4 r5.y, r4.xyzw, r1.xyzw  // r5.y <- rgbarsp.y
+                      dp4 r5.z, r4.xyzw, r2.xyzw  // r5.z <- rgbarsp.z
+                      dp4 r5.w, r4.xyzw, r3.xyzw  // r5.w <- rgbarsp.w
+                
+                #line 334
+                      nop 
+                      mov r5.xyzw, r5.xyzw
+                
+                #line 294
+                      nop 
+                      mov r5.xyzw, r5.xyzw
+                
+                #line 195
+                      ieq r4.x, cb0[12].w, cb0[13].x
+                      if_nz r4.x
+                
+                #line 197
+                        mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
+                
+                #line 198
+                      else 
+                
+                #line 199
+                        ieq r4.x, cb0[12].w, l(16)
+                        if_nz r4.x
+                
+                #line 201
+                          nop 
+                          mov r5.xyzw, r5.xyzw
+                
+                #line 130
+                          mov r4.x, l(0.835938)  // r4.x <- ST2084_c1
+                
+                #line 131
+                          mov r4.y, l(18.851562)  // r4.y <- ST2084_c2
+                
+                #line 132
+                          mov r4.z, l(18.687500)  // r4.z <- ST2084_c3
+                
+                #line 133
+                          itof r7.xyzw, l(0, 0, 0, 0)
+                          max r7.xyzw, r5.xyzw, r7.xyzw
+                          log r7.xyzw, r7.xyzw
+                          mul r7.xyzw, r7.xyzw, l(0.012683, 0.012683, 0.012683, 0.012683)
+                          exp r7.xyzw, r7.xyzw  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z; r7.w <- rgb.w
+                
+                #line 134
+                          mov r8.xyzw, -r4.xxxx
+                          add r8.xyzw, r7.xyzw, r8.xyzw
+                          max r8.xyzw, r8.xyzw, l(0.000000, 0.000000, 0.000000, 0.000000)
+                          mul r7.xyzw, r4.zzzz, r7.xyzw
+                          mov r7.xyzw, -r7.xyzw
+                          add r4.xyzw, r4.yyyy, r7.xyzw
+                          div r4.xyzw, r8.xyzw, r4.xyzw  // r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 135
+                          log r4.xyzw, r4.xyzw
+                          mul r4.xyzw, r4.xyzw, l(6.277395, 6.277395, 6.277395, 6.277395)
+                          exp r4.xyzw, r4.xyzw  // r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 136
+                          itof r7.xyzw, l(10000, 10000, 10000, 10000)
+                          mul r5.xyzw, r4.xyzw, r7.xyzw  // r5.x <- <ST2084TOLinear return value>.x; r5.y <- <ST2084TOLinear return value>.y; r5.z <- <ST2084TOLinear return value>.z; r5.w <- <ST2084TOLinear return value>.w
+                
+                #line 201
+                          mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
+                
+                #line 202
+                        else   // Prior locations: r4.y <- rgbasub.y; r4.z <- rgbasub.z; r4.w <- rgbasub.w; r5.x <- rgbarsp.x; r5.y <- rgbarsp.y; r5.z <- rgbarsp.z; r5.w <- rgbarsp.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 203
+                          ieq r4.x, cb0[12].w, l(1)
+                          if_nz r4.x
+                
+                #line 205
+                            nop 
+                            mov r5.xyzw, r5.xyzw
+                
+                #line 151
+                            log r4.xyzw, r5.xyzw
+                            mul r4.xyzw, r4.xyzw, l(2.222222, 2.222222, 2.222222, 2.222222)
+                            exp r5.xyzw, r4.xyzw  // r5.x <- <BT709TOLinear return value>.x; r5.y <- <BT709TOLinear return value>.y; r5.z <- <BT709TOLinear return value>.z; r5.w <- <BT709TOLinear return value>.w
+                
+                #line 205
+                            mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
+                
+                #line 206
+                          else   // Prior locations: r4.y <- rgbasub.y; r4.z <- rgbasub.z; r4.w <- rgbasub.w; r5.x <- rgbarsp.x; r5.y <- rgbarsp.y; r5.z <- rgbarsp.z; r5.w <- rgbarsp.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 209
+                            mov r5.xyzw, r5.xyzw  // r5.x <- <sourceToLinear return value>.x; r5.y <- <sourceToLinear return value>.y; r5.z <- <sourceToLinear return value>.z; r5.w <- <sourceToLinear return value>.w
+                
+                #line 210
+                          endif 
+                        endif 
+                      endif 
+                
+                #line 294
+                      mov r5.xyzw, r5.xyzw  // r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 295
+                      nop 
+                      mov r5.xyzw, r5.xyzw
+                
+                #line 221
+                      ine r4.x, cb0[13].z, cb0[13].y
+                      if_nz r4.x
+                
+                #line 223
+                        nop 
+                        mov r5.xyzw, r5.xyzw
+                
+                #line 216
+                        dp4 r4.x, r5.xyzw, cb1[8].xyzw
+                        dp4 r4.y, r5.xyzw, cb1[9].xyzw
+                        dp4 r4.z, r5.xyzw, cb1[10].xyzw
+                        itof r7.xyz, l(0, 0, 0, 0)
+                        max r5.xyz, r4.xyzx, r7.xyzx  // r5.x <- <PrimariesTransform return value>.x; r5.y <- <PrimariesTransform return value>.y; r5.z <- <PrimariesTransform return value>.z
+                
+                #line 223
+                        mov r5.xyz, r5.xyzx  // r5.x <- <transformPrimaries return value>.x; r5.y <- <transformPrimaries return value>.y; r5.z <- <transformPrimaries return value>.z
+                
+                #line 224
+                      else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 227
+                        mov r5.xyz, r5.xyzx  // r5.x <- <transformPrimaries return value>.x; r5.y <- <transformPrimaries return value>.y; r5.z <- <transformPrimaries return value>.z
+                
+                #line 228
+                      endif 
+                
+                #line 295
+                      mov r5.xyz, r5.xyzx
+                
+                #line 296
+                      nop 
+                      mov r5.xyz, r5.xyzx
+                
+                #line 233
+                      ieq r4.x, cb0[13].x, l(1)
+                      ieq r4.y, cb0[13].x, l(4)
+                      or r4.x, r4.y, r4.x
+                      if_nz r4.x
+                
+                #line 235
+                        ieq r4.x, cb0[12].w, l(16)
+                        if_nz r4.x
+                
+                #line 237
+                          nop 
+                          mov r5.xyz, r5.xyzx
+                
+                #line 188
+                          nop 
+                          mov r4.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                          mov r4.w, l(0.150000)  // r4.w <- A
+                          mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                          mul r7.xyz, r4.xyzx, r4.wwww
+                          add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                          mul r7.xyz, r4.xyzx, r7.xyzx
+                          add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                          mul r8.xyz, r4.xyzx, r4.wwww
+                          add r8.xyz, r5.wwww, r8.xyzx
+                          mul r4.xyz, r4.xyzx, r8.xyzx
+                          add r4.xyz, r4.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                          div r4.xyz, r7.xyzx, r4.xyzx
+                          mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                          add r4.xyz, r4.xyzx, r7.xyzx  // r4.x <- <hable return value>.x; r4.y <- <hable return value>.y; r4.z <- <hable return value>.z
+                
+                #line 188
+                          mov r4.xyz, r4.xyzx  // r4.x <- HABLE_DIV.x; r4.y <- HABLE_DIV.y; r4.z <- HABLE_DIV.z
+                
+                #line 189
+                          nop 
+                          mul r7.xyz, r5.xyzx, cb0[14].yyyy
+                
+                #line 182
+                          mov r4.w, l(0.150000)
+                          mov r5.w, l(0.500000)
+                
+                #line 183
+                          mul r8.xyz, r7.xyzx, r4.wwww
+                          add r8.xyz, r8.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                          mul r8.xyz, r7.xyzx, r8.xyzx
+                          add r8.xyz, r8.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                          mul r9.xyz, r7.xyzx, r4.wwww
+                          add r9.xyz, r5.wwww, r9.xyzx
+                          mul r7.xyz, r7.xyzx, r9.xyzx
+                          add r7.xyz, r7.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                          div r7.xyz, r8.xyzx, r7.xyzx
+                          mov r8.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                          add r7.xyz, r7.xyzx, r8.xyzx  // r7.x <- <hable return value>.x; r7.y <- <hable return value>.y; r7.z <- <hable return value>.z
+                
+                #line 189
+                          div r5.xyz, r7.xyzx, r4.xyzx  // r5.x <- rgba.x; r5.y <- rgba.y; r5.z <- rgba.z
+                
+                #line 190
+                          mov r5.xyz, r5.xyzx  // r5.x <- <HDRToneMapping return value>.x; r5.y <- <HDRToneMapping return value>.y; r5.z <- <HDRToneMapping return value>.z
+                
+                #line 237
+                          mov r5.xyz, r5.xyzx  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 238
+                        else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 239
+                          ieq r4.x, cb0[12].w, l(18)
+                          if_nz r4.x
+                
+                #line 241
+                            nop 
+                            mov r5.xyz, r5.xyzx
+                
+                #line 188
+                            nop 
+                            mov r4.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                            mov r4.w, l(0.150000)  // r4.w <- A
+                            mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                            mul r7.xyz, r4.xyzx, r4.wwww
+                            add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                            mul r7.xyz, r4.xyzx, r7.xyzx
+                            add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                            mul r8.xyz, r4.xyzx, r4.wwww
+                            add r8.xyz, r5.wwww, r8.xyzx
+                            mul r4.xyz, r4.xyzx, r8.xyzx
+                            add r4.xyz, r4.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                            div r4.xyz, r7.xyzx, r4.xyzx
+                            mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                            add r4.xyz, r4.xyzx, r7.xyzx  // r4.x <- <hable return value>.x; r4.y <- <hable return value>.y; r4.z <- <hable return value>.z
+                
+                #line 188
+                            mov r4.xyz, r4.xyzx  // r4.x <- HABLE_DIV.x; r4.y <- HABLE_DIV.y; r4.z <- HABLE_DIV.z
+                
+                #line 189
+                            nop 
+                            mul r7.xyz, r5.xyzx, cb0[14].yyyy
+                
+                #line 182
+                            mov r4.w, l(0.150000)
+                            mov r5.w, l(0.500000)
+                
+                #line 183
+                            mul r8.xyz, r7.xyzx, r4.wwww
+                            add r8.xyz, r8.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                            mul r8.xyz, r7.xyzx, r8.xyzx
+                            add r8.xyz, r8.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                            mul r9.xyz, r7.xyzx, r4.wwww
+                            add r9.xyz, r5.wwww, r9.xyzx
+                            mul r7.xyz, r7.xyzx, r9.xyzx
+                            add r7.xyz, r7.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                            div r7.xyz, r8.xyzx, r7.xyzx
+                            mov r8.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                            add r7.xyz, r7.xyzx, r8.xyzx  // r7.x <- <hable return value>.x; r7.y <- <hable return value>.y; r7.z <- <hable return value>.z
+                
+                #line 189
+                            div r5.xyz, r7.xyzx, r4.xyzx  // r5.x <- rgba.x; r5.y <- rgba.y; r5.z <- rgba.z
+                
+                #line 190
+                            mov r5.xyz, r5.xyzx  // r5.x <- <HDRToneMapping return value>.x; r5.y <- <HDRToneMapping return value>.y; r5.z <- <HDRToneMapping return value>.z
+                
+                #line 241
+                            mov r5.xyz, r5.xyzx  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 242
+                          else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 245
+                            mul r5.xyz, r5.xyzx, cb0[14].yyyy  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 246
+                          endif 
+                        endif 
+                
+                #line 247
+                      else   // Prior locations: r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z
+                
+                #line 250
+                        mov r5.xyz, r5.xyzx  // r5.x <- <toneMapping return value>.x; r5.y <- <toneMapping return value>.y; r5.z <- <toneMapping return value>.z
+                
+                #line 251
+                      endif 
+                
+                #line 296
+                      mov r5.xyz, r5.xyzx
+                
+                #line 297
+                      nop 
+                      mov r5.xyz, r5.xyzx
+                
+                #line 261
+                      ieq r4.x, cb0[12].w, cb0[13].x
+                      if_nz r4.x
+                
+                #line 263
+                        mov r6.xyz, r5.xyzx
+                
+                #line 264
+                      endif   // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 265
+                      if_z r4.x
+                        ieq r4.x, cb0[13].x, l(16)
+                        if_nz r4.x
+                
+                #line 267
+                          nop 
+                          mov r5.xyz, r5.xyzx
+                
+                #line 169
+                          mov r4.x, l(0.159302)  // r4.x <- ST2084_m1
+                
+                #line 170
+                          mov r4.y, l(78.843750)  // r4.y <- ST2084_m2
+                
+                #line 171
+                          mov r4.z, l(0.835938)  // r4.z <- ST2084_c1
+                
+                #line 172
+                          mov r4.w, l(18.851562)  // r4.w <- ST2084_c2
+                
+                #line 173
+                          mov r5.w, l(18.687500)  // r5.w <- ST2084_c3
+                
+                #line 174
+                          itof r7.xyz, l(1000, 1000, 1000, 0)
+                          div r7.xyz, r5.xyzx, r7.xyzx
+                          log r7.xyz, r7.xyzx
+                          mul r7.xyz, r4.xxxx, r7.xyzx
+                          exp r7.xyz, r7.xyzx  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z
+                
+                #line 175
+                          mul r8.xyz, r4.wwww, r7.xyzx
+                          add r4.xzw, r4.zzzz, r8.xxyz
+                          itof r8.xyz, l(1, 1, 1, 0)
+                          mul r7.xyz, r5.wwww, r7.xyzx
+                          add r7.xyz, r7.xyzx, r8.xyzx
+                          div r4.xzw, r4.xxzw, r7.xxyz  // r4.x <- rgb.x; r4.z <- rgb.y; r4.w <- rgb.z
+                
+                #line 176
+                          log r4.xzw, r4.xxzw
+                          mul r4.xyz, r4.xzwx, r4.yyyy
+                          exp r6.xyz, r4.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 177
+                          mov r6.xyz, r6.xyzx  // r6.x <- <LineTOST2084 return value>.x; r6.y <- <LineTOST2084 return value>.y; r6.z <- <LineTOST2084 return value>.z
+                
+                #line 267
+                          mov r6.xyz, r6.xyzx  // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 268
+                        else 
+                
+                #line 269
+                          ieq r4.x, cb0[13].x, l(18)
+                          if_nz r4.x
+                
+                #line 271
+                            mov r6.xyz, r5.xyzx
+                
+                #line 272
+                          else 
+                
+                #line 273
+                            ieq r4.x, cb0[13].x, l(1)
+                            if_nz r4.x
+                
+                #line 275
+                              log r4.xyz, r5.xyzx
+                              mul r4.xyz, r4.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                              exp r6.xyz, r4.xyzx
+                
+                #line 276
+                            else 
+                
+                #line 277
+                              ieq r4.x, cb0[13].x, l(4)
+                              if_nz r4.x
+                
+                #line 279
+                                log r4.xyz, r5.xyzx
+                                mul r4.xyz, r4.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                                exp r6.xyz, r4.xyzx
+                
+                #line 280
                               else 
                 
-                #line 142
-                                itof r1.xyzw, l(0, 1, 0, 1)  // r1.x <- <GetRGBA return value>.x; r1.y <- <GetRGBA return value>.y; r1.z <- <GetRGBA return value>.z; r1.w <- <GetRGBA return value>.w
+                #line 283
+                                mov r6.xyz, r5.xyzx
                 
-                #line 143
+                #line 284
+                              endif 
+                            endif 
+                          endif 
+                        endif 
+                      endif 
+                
+                #line 297
+                      mov r6.xyz, r6.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 298
+                      nop 
+                      mov r6.xyz, r6.xyzx
+                
+                #line 256
+                      mov r6.xyz, r6.xyzx  // r6.x <- <adjustRange return value>.x; r6.y <- <adjustRange return value>.y; r6.z <- <adjustRange return value>.z
+                
+                #line 298
+                      mov r6.xyz, r6.xyzx
+                
+                #line 299
+                      nop 
+                      mov r6.xyz, r6.xyzx
+                
+                #line 289
+                      mov r6.xyz, r6.xyzx  // r6.x <- <reorderPlanes return value>.x; r6.y <- <reorderPlanes return value>.y; r6.z <- <reorderPlanes return value>.z
+                
+                #line 299
+                      mov r6.xyz, r6.xyzx
+                
+                #line 300
+                      mov r6.xyz, r6.xyzx  // r6.x <- <RenderFloat return value>.x; r6.y <- <RenderFloat return value>.y; r6.z <- <RenderFloat return value>.z
+                
+                #line 334
+                      mov r6.xyz, r6.xyzx  // r6.x <- rgbarsp.x; r6.y <- rgbarsp.y; r6.z <- rgbarsp.z
+                
+                #line 335
+                      itof r6.w, l(1)  // r6.w <- rgbarsp.w
+                
+                #line 336
+                      mov r6.xyz, r6.xyzx  // r6.x <- <GetRGBA return value>.x; r6.y <- <GetRGBA return value>.y; r6.z <- <GetRGBA return value>.z
+                      mov r6.w, r6.w  // r6.w <- <GetRGBA return value>.w
+                
+                #line 337
+                    else 
+                
+                #line 338
+                      ieq r4.x, cb0[12].x, l(2)
+                      if_nz r4.x
+                
+                #line 340
+                        nop 
+                
+                #line 64
+                        sample_indexable(texture2d)(float,float,float,float) r4.x, v1.xyxx, t0.xyzw, s0  // r4.x <- y
+                
+                #line 66
+                        sample_indexable(texture2d)(float,float,float,float) r4.y, v1.xyxx, t1.yxzw, s0  // r4.y <- u
+                
+                #line 67
+                        sample_indexable(texture2d)(float,float,float,float) r4.z, v1.xyxx, t2.yzxw, s0  // r4.z <- v
+                
+                #line 69
+                        mov r4.w, l(1.000000)
+                        mov r4.xyzw, r4.xyzw  // r4.x <- <PSPlanar420_Reverse return value>.x; r4.y <- <PSPlanar420_Reverse return value>.y; r4.z <- <PSPlanar420_Reverse return value>.z; r4.w <- <PSPlanar420_Reverse return value>.w
+                
+                #line 340
+                        mov r4.xyzw, r4.xyzw  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w
+                
+                #line 341
+                        mov r5.xyzw, -cb0[15].xyzw
+                        add r4.xyzw, r4.xyzw, r5.xyzw  // r4.x <- rgbasub.x; r4.y <- rgbasub.y; r4.z <- rgbasub.z; r4.w <- rgbasub.w
+                
+                #line 342
+                        dp4 r6.x, r4.xyzw, r0.xyzw  // r6.x <- rgbarsp.x
+                        dp4 r6.y, r4.xyzw, r1.xyzw  // r6.y <- rgbarsp.y
+                        dp4 r6.z, r4.xyzw, r2.xyzw  // r6.z <- rgbarsp.z
+                
+                #line 343
+                        nop 
+                
+                #line 294
+                        nop 
+                
+                #line 195
+                        ieq r4.x, cb0[12].w, cb0[13].x
+                        if_z r4.x
+                
+                #line 199
+                          ieq r4.x, cb0[12].w, l(16)
+                          if_nz r4.x
+                
+                #line 201
+                            nop 
+                
+                #line 202
+                          else 
+                
+                #line 203
+                            ieq r4.x, cb0[12].w, l(1)
+                            if_nz r4.x
+                
+                #line 205
+                              nop 
+                
+                #line 210
+                            endif 
+                          endif 
+                        endif 
+                
+                #line 295
+                        nop 
+                
+                #line 221
+                        ine r4.x, cb0[13].z, cb0[13].y
+                        if_nz r4.x
+                
+                #line 223
+                          nop 
+                
+                #line 228
+                        endif 
+                
+                #line 296
+                        nop 
+                
+                #line 233
+                        ieq r4.x, cb0[13].x, l(1)
+                        ieq r4.y, cb0[13].x, l(4)
+                        or r4.x, r4.y, r4.x
+                        if_nz r4.x
+                
+                #line 235
+                          ieq r4.x, cb0[12].w, l(16)
+                          if_nz r4.x
+                
+                #line 237
+                            nop 
+                
+                #line 188
+                            nop 
+                
+                #line 189
+                            nop 
+                
+                #line 238
+                          else 
+                
+                #line 239
+                            ieq r4.x, cb0[12].w, l(18)
+                            if_nz r4.x
+                
+                #line 241
+                              nop 
+                
+                #line 188
+                              nop 
+                
+                #line 189
+                              nop 
+                
+                #line 246
+                            endif 
+                          endif 
+                
+                #line 251
+                        endif 
+                
+                #line 297
+                        nop 
+                
+                #line 261
+                        ieq r4.x, cb0[12].w, cb0[13].x
+                
+                #line 265
+                        if_z r4.x
+                          ieq r4.x, cb0[13].x, l(16)
+                          if_nz r4.x
+                
+                #line 267
+                            nop 
+                
+                #line 284
+                          endif 
+                        endif 
+                
+                #line 298
+                        nop 
+                
+                #line 299
+                        nop 
+                
+                #line 344
+                        itof r6.w, l(1)  // r6.w <- rgbarsp.w
+                
+                #line 345
+                        mov r6.xyz, r6.xyzx  // r6.x <- <GetRGBA return value>.x; r6.y <- <GetRGBA return value>.y; r6.z <- <GetRGBA return value>.z
+                        mov r6.w, r6.w  // r6.w <- <GetRGBA return value>.w
+                
+                #line 346
+                      else 
+                
+                #line 347
+                        ieq r4.x, cb0[12].x, l(1)
+                        if_nz r4.x
+                
+                #line 349
+                          sample_indexable(texture2d)(float,float,float,float) r4.xyzw, v1.xyxx, t0.xyzw, s0  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w
+                
+                #line 350
+                          nop 
+                          mov r4.xyzw, r4.xyzw
+                
+                #line 294
+                          nop 
+                          mov r4.xyzw, r4.xyzw
+                
+                #line 195
+                          ieq r5.x, cb0[12].w, cb0[13].x
+                          if_nz r5.x
+                
+                #line 197
+                            mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 198
+                          else 
+                
+                #line 199
+                            ieq r5.x, cb0[12].w, l(16)
+                            if_nz r5.x
+                
+                #line 201
+                              nop 
+                              mov r4.xyzw, r4.xyzw
+                
+                #line 130
+                              mov r5.x, l(0.835938)  // r5.x <- ST2084_c1
+                
+                #line 131
+                              mov r5.y, l(18.851562)  // r5.y <- ST2084_c2
+                
+                #line 132
+                              mov r5.z, l(18.687500)  // r5.z <- ST2084_c3
+                
+                #line 133
+                              itof r7.xyzw, l(0, 0, 0, 0)
+                              max r7.xyzw, r4.xyzw, r7.xyzw
+                              log r7.xyzw, r7.xyzw
+                              mul r7.xyzw, r7.xyzw, l(0.012683, 0.012683, 0.012683, 0.012683)
+                              exp r7.xyzw, r7.xyzw  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z; r7.w <- rgb.w
+                
+                #line 134
+                              mov r8.xyzw, -r5.xxxx
+                              add r8.xyzw, r7.xyzw, r8.xyzw
+                              max r8.xyzw, r8.xyzw, l(0.000000, 0.000000, 0.000000, 0.000000)
+                              mul r7.xyzw, r5.zzzz, r7.xyzw
+                              mov r7.xyzw, -r7.xyzw
+                              add r5.xyzw, r5.yyyy, r7.xyzw
+                              div r5.xyzw, r8.xyzw, r5.xyzw  // r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 135
+                              log r5.xyzw, r5.xyzw
+                              mul r5.xyzw, r5.xyzw, l(6.277395, 6.277395, 6.277395, 6.277395)
+                              exp r5.xyzw, r5.xyzw  // r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 136
+                              itof r7.xyzw, l(10000, 10000, 10000, 10000)
+                              mul r4.xyzw, r5.xyzw, r7.xyzw  // r4.x <- <ST2084TOLinear return value>.x; r4.y <- <ST2084TOLinear return value>.y; r4.z <- <ST2084TOLinear return value>.z; r4.w <- <ST2084TOLinear return value>.w
+                
+                #line 201
+                              mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 202
+                            else   // Prior locations: r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 203
+                              ieq r5.x, cb0[12].w, l(1)
+                              if_nz r5.x
+                
+                #line 205
+                                nop 
+                                mov r4.xyzw, r4.xyzw
+                
+                #line 151
+                                log r5.xyzw, r4.xyzw
+                                mul r5.xyzw, r5.xyzw, l(2.222222, 2.222222, 2.222222, 2.222222)
+                                exp r4.xyzw, r5.xyzw  // r4.x <- <BT709TOLinear return value>.x; r4.y <- <BT709TOLinear return value>.y; r4.z <- <BT709TOLinear return value>.z; r4.w <- <BT709TOLinear return value>.w
+                
+                #line 205
+                                mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 206
+                              else   // Prior locations: r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 209
+                                mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 210
+                              endif 
+                            endif 
+                          endif 
+                
+                #line 294
+                          mov r4.xyzw, r4.xyzw  // r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 295
+                          nop 
+                          mov r4.xyzw, r4.xyzw
+                
+                #line 221
+                          ine r5.x, cb0[13].z, cb0[13].y
+                          if_nz r5.x
+                
+                #line 223
+                            nop 
+                            mov r4.xyzw, r4.xyzw
+                
+                #line 216
+                            dp4 r5.x, r4.xyzw, cb1[8].xyzw
+                            dp4 r5.y, r4.xyzw, cb1[9].xyzw
+                            dp4 r5.z, r4.xyzw, cb1[10].xyzw
+                            itof r7.xyz, l(0, 0, 0, 0)
+                            max r4.xyz, r5.xyzx, r7.xyzx  // r4.x <- <PrimariesTransform return value>.x; r4.y <- <PrimariesTransform return value>.y; r4.z <- <PrimariesTransform return value>.z
+                
+                #line 223
+                            mov r4.xyz, r4.xyzx  // r4.x <- <transformPrimaries return value>.x; r4.y <- <transformPrimaries return value>.y; r4.z <- <transformPrimaries return value>.z
+                
+                #line 224
+                          else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 227
+                            mov r4.xyz, r4.xyzx  // r4.x <- <transformPrimaries return value>.x; r4.y <- <transformPrimaries return value>.y; r4.z <- <transformPrimaries return value>.z
+                
+                #line 228
+                          endif 
+                
+                #line 295
+                          mov r4.xyz, r4.xyzx
+                
+                #line 296
+                          nop 
+                          mov r4.xyz, r4.xyzx
+                
+                #line 233
+                          ieq r4.w, cb0[13].x, l(1)
+                          ieq r5.x, cb0[13].x, l(4)
+                          or r4.w, r4.w, r5.x
+                          if_nz r4.w
+                
+                #line 235
+                            ieq r4.w, cb0[12].w, l(16)
+                            if_nz r4.w
+                
+                #line 237
+                              nop 
+                              mov r4.xyz, r4.xyzx
+                
+                #line 188
+                              nop 
+                              mov r5.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                              mov r4.w, l(0.150000)  // r4.w <- A
+                              mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                              mul r7.xyz, r5.xyzx, r4.wwww
+                              add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                              mul r7.xyz, r5.xyzx, r7.xyzx
+                              add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                              mul r8.xyz, r5.xyzx, r4.wwww
+                              add r8.xyz, r5.wwww, r8.xyzx
+                              mul r5.xyz, r5.xyzx, r8.xyzx
+                              add r5.xyz, r5.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                              div r5.xyz, r7.xyzx, r5.xyzx
+                              mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                              add r5.xyz, r5.xyzx, r7.xyzx  // r5.x <- <hable return value>.x; r5.y <- <hable return value>.y; r5.z <- <hable return value>.z
+                
+                #line 188
+                              mov r5.xyz, r5.xyzx  // r5.x <- HABLE_DIV.x; r5.y <- HABLE_DIV.y; r5.z <- HABLE_DIV.z
+                
+                #line 189
+                              nop 
+                              mul r7.xyz, r4.xyzx, cb0[14].yyyy
+                
+                #line 182
+                              mov r4.w, l(0.150000)
+                              mov r5.w, l(0.500000)
+                
+                #line 183
+                              mul r8.xyz, r7.xyzx, r4.wwww
+                              add r8.xyz, r8.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                              mul r8.xyz, r7.xyzx, r8.xyzx
+                              add r8.xyz, r8.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                              mul r9.xyz, r7.xyzx, r4.wwww
+                              add r9.xyz, r5.wwww, r9.xyzx
+                              mul r7.xyz, r7.xyzx, r9.xyzx
+                              add r7.xyz, r7.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                              div r7.xyz, r8.xyzx, r7.xyzx
+                              mov r8.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                              add r7.xyz, r7.xyzx, r8.xyzx  // r7.x <- <hable return value>.x; r7.y <- <hable return value>.y; r7.z <- <hable return value>.z
+                
+                #line 189
+                              div r4.xyz, r7.xyzx, r5.xyzx  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z
+                
+                #line 190
+                              mov r4.xyz, r4.xyzx  // r4.x <- <HDRToneMapping return value>.x; r4.y <- <HDRToneMapping return value>.y; r4.z <- <HDRToneMapping return value>.z
+                
+                #line 237
+                              mov r4.xyz, r4.xyzx  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 238
+                            else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 239
+                              ieq r4.w, cb0[12].w, l(18)
+                              if_nz r4.w
+                
+                #line 241
+                                nop 
+                                mov r4.xyz, r4.xyzx
+                
+                #line 188
+                                nop 
+                                mov r5.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                                mov r4.w, l(0.150000)  // r4.w <- A
+                                mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                                mul r7.xyz, r5.xyzx, r4.wwww
+                                add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                mul r7.xyz, r5.xyzx, r7.xyzx
+                                add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                mul r8.xyz, r5.xyzx, r4.wwww
+                                add r8.xyz, r5.wwww, r8.xyzx
+                                mul r5.xyz, r5.xyzx, r8.xyzx
+                                add r5.xyz, r5.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                div r5.xyz, r7.xyzx, r5.xyzx
+                                mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                add r5.xyz, r5.xyzx, r7.xyzx  // r5.x <- <hable return value>.x; r5.y <- <hable return value>.y; r5.z <- <hable return value>.z
+                
+                #line 188
+                                mov r5.xyz, r5.xyzx  // r5.x <- HABLE_DIV.x; r5.y <- HABLE_DIV.y; r5.z <- HABLE_DIV.z
+                
+                #line 189
+                                nop 
+                                mul r7.xyz, r4.xyzx, cb0[14].yyyy
+                
+                #line 182
+                                mov r4.w, l(0.150000)
+                                mov r5.w, l(0.500000)
+                
+                #line 183
+                                mul r8.xyz, r7.xyzx, r4.wwww
+                                add r8.xyz, r8.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                mul r8.xyz, r7.xyzx, r8.xyzx
+                                add r8.xyz, r8.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                mul r9.xyz, r7.xyzx, r4.wwww
+                                add r9.xyz, r5.wwww, r9.xyzx
+                                mul r7.xyz, r7.xyzx, r9.xyzx
+                                add r7.xyz, r7.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                div r7.xyz, r8.xyzx, r7.xyzx
+                                mov r8.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                add r7.xyz, r7.xyzx, r8.xyzx  // r7.x <- <hable return value>.x; r7.y <- <hable return value>.y; r7.z <- <hable return value>.z
+                
+                #line 189
+                                div r4.xyz, r7.xyzx, r5.xyzx  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z
+                
+                #line 190
+                                mov r4.xyz, r4.xyzx  // r4.x <- <HDRToneMapping return value>.x; r4.y <- <HDRToneMapping return value>.y; r4.z <- <HDRToneMapping return value>.z
+                
+                #line 241
+                                mov r4.xyz, r4.xyzx  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 242
+                              else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 245
+                                mul r4.xyz, r4.xyzx, cb0[14].yyyy  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 246
+                              endif 
+                            endif 
+                
+                #line 247
+                          else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 250
+                            mov r4.xyz, r4.xyzx  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 251
+                          endif 
+                
+                #line 296
+                          mov r4.xyz, r4.xyzx
+                
+                #line 297
+                          nop 
+                          mov r4.xyz, r4.xyzx
+                
+                #line 261
+                          ieq r4.w, cb0[12].w, cb0[13].x
+                          if_nz r4.w
+                
+                #line 263
+                            mov r6.xyz, r4.xyzx
+                
+                #line 264
+                          endif   // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 265
+                          if_z r4.w
+                            ieq r4.w, cb0[13].x, l(16)
+                            if_nz r4.w
+                
+                #line 267
+                              nop 
+                              mov r4.xyz, r4.xyzx
+                
+                #line 169
+                              mov r4.w, l(0.159302)  // r4.w <- ST2084_m1
+                
+                #line 170
+                              mov r5.x, l(78.843750)  // r5.x <- ST2084_m2
+                
+                #line 171
+                              mov r5.y, l(0.835938)  // r5.y <- ST2084_c1
+                
+                #line 172
+                              mov r5.z, l(18.851562)  // r5.z <- ST2084_c2
+                
+                #line 173
+                              mov r5.w, l(18.687500)  // r5.w <- ST2084_c3
+                
+                #line 174
+                              itof r7.xyz, l(1000, 1000, 1000, 0)
+                              div r7.xyz, r4.xyzx, r7.xyzx
+                              log r7.xyz, r7.xyzx
+                              mul r7.xyz, r4.wwww, r7.xyzx
+                              exp r7.xyz, r7.xyzx  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z
+                
+                #line 175
+                              mul r8.xyz, r5.zzzz, r7.xyzx
+                              add r8.xyz, r5.yyyy, r8.xyzx
+                              itof r9.xyz, l(1, 1, 1, 0)
+                              mul r5.yzw, r5.wwww, r7.xxyz
+                              add r5.yzw, r5.yyzw, r9.xxyz
+                              div r5.yzw, r8.xxyz, r5.yyzw  // r5.y <- rgb.x; r5.z <- rgb.y; r5.w <- rgb.z
+                
+                #line 176
+                              log r5.yzw, r5.yyzw
+                              mul r5.xyz, r5.yzwy, r5.xxxx
+                              exp r6.xyz, r5.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 177
+                              mov r6.xyz, r6.xyzx  // r6.x <- <LineTOST2084 return value>.x; r6.y <- <LineTOST2084 return value>.y; r6.z <- <LineTOST2084 return value>.z
+                
+                #line 267
+                              mov r6.xyz, r6.xyzx  // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 268
+                            else 
+                
+                #line 269
+                              ieq r4.w, cb0[13].x, l(18)
+                              if_nz r4.w
+                
+                #line 271
+                                mov r6.xyz, r4.xyzx
+                
+                #line 272
+                              else 
+                
+                #line 273
+                                ieq r4.w, cb0[13].x, l(1)
+                                if_nz r4.w
+                
+                #line 275
+                                  log r5.xyz, r4.xyzx
+                                  mul r5.xyz, r5.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                                  exp r6.xyz, r5.xyzx
+                
+                #line 276
+                                else 
+                
+                #line 277
+                                  ieq r4.w, cb0[13].x, l(4)
+                                  if_nz r4.w
+                
+                #line 279
+                                    log r5.xyz, r4.xyzx
+                                    mul r5.xyz, r5.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                                    exp r6.xyz, r5.xyzx
+                
+                #line 280
+                                  else 
+                
+                #line 283
+                                    mov r6.xyz, r4.xyzx
+                
+                #line 284
+                                  endif 
+                                endif 
+                              endif 
+                            endif 
+                          endif 
+                
+                #line 297
+                          mov r6.xyz, r6.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 298
+                          nop 
+                          mov r6.xyz, r6.xyzx
+                
+                #line 256
+                          mov r6.xyz, r6.xyzx  // r6.x <- <adjustRange return value>.x; r6.y <- <adjustRange return value>.y; r6.z <- <adjustRange return value>.z
+                
+                #line 298
+                          mov r6.xyz, r6.xyzx
+                
+                #line 299
+                          nop 
+                          mov r6.xyz, r6.xyzx
+                
+                #line 289
+                          mov r6.xyz, r6.xyzx  // r6.x <- <reorderPlanes return value>.x; r6.y <- <reorderPlanes return value>.y; r6.z <- <reorderPlanes return value>.z
+                
+                #line 299
+                          mov r6.xyz, r6.xyzx
+                
+                #line 300
+                          itof r6.w, l(1)  // r6.w <- <RenderFloat return value>.w
+                          mov r6.xyz, r6.xyzx  // r6.x <- <RenderFloat return value>.x; r6.y <- <RenderFloat return value>.y; r6.z <- <RenderFloat return value>.z
+                
+                #line 350
+                          mov r6.xyzw, r6.xyzw  // r6.x <- rgba.x; r6.y <- rgba.y; r6.z <- rgba.z; r6.w <- rgba.w
+                
+                #line 351
+                          mov r6.xyzw, r6.xyzw  // r6.x <- <GetRGBA return value>.x; r6.y <- <GetRGBA return value>.y; r6.z <- <GetRGBA return value>.z; r6.w <- <GetRGBA return value>.w
+                
+                #line 352
+                        else 
+                
+                #line 353
+                          ieq r4.x, cb0[12].x, l(4)
+                          if_nz r4.x
+                
+                #line 355
+                            nop 
+                
+                #line 85
+                            itof r4.xyz, l(0, 1, 0, 0)  // r4.x <- <PSPlanarRGB_Reverse return value>.x; r4.y <- <PSPlanarRGB_Reverse return value>.y; r4.z <- <PSPlanarRGB_Reverse return value>.z
+                            mov r4.w, l(1.000000)  // r4.w <- <PSPlanarRGB_Reverse return value>.w
+                
+                #line 355
+                            mov r4.xyzw, r4.xyzw  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w
+                
+                #line 356
+                            nop 
+                            mov r4.xyzw, r4.xyzw
+                
+                #line 294
+                            nop 
+                            mov r4.xyzw, r4.xyzw
+                
+                #line 195
+                            ieq r5.x, cb0[12].w, cb0[13].x
+                            if_nz r5.x
+                
+                #line 197
+                              mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 198
+                            else 
+                
+                #line 199
+                              ieq r5.x, cb0[12].w, l(16)
+                              if_nz r5.x
+                
+                #line 201
+                                nop 
+                                mov r4.xyzw, r4.xyzw
+                
+                #line 130
+                                mov r5.x, l(0.835938)  // r5.x <- ST2084_c1
+                
+                #line 131
+                                mov r5.y, l(18.851562)  // r5.y <- ST2084_c2
+                
+                #line 132
+                                mov r5.z, l(18.687500)  // r5.z <- ST2084_c3
+                
+                #line 133
+                                itof r7.xyzw, l(0, 0, 0, 0)
+                                max r7.xyzw, r4.xyzw, r7.xyzw
+                                log r7.xyzw, r7.xyzw
+                                mul r7.xyzw, r7.xyzw, l(0.012683, 0.012683, 0.012683, 0.012683)
+                                exp r7.xyzw, r7.xyzw  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z; r7.w <- rgb.w
+                
+                #line 134
+                                mov r8.xyzw, -r5.xxxx
+                                add r8.xyzw, r7.xyzw, r8.xyzw
+                                max r8.xyzw, r8.xyzw, l(0.000000, 0.000000, 0.000000, 0.000000)
+                                mul r7.xyzw, r5.zzzz, r7.xyzw
+                                mov r7.xyzw, -r7.xyzw
+                                add r5.xyzw, r5.yyyy, r7.xyzw
+                                div r5.xyzw, r8.xyzw, r5.xyzw  // r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 135
+                                log r5.xyzw, r5.xyzw
+                                mul r5.xyzw, r5.xyzw, l(6.277395, 6.277395, 6.277395, 6.277395)
+                                exp r5.xyzw, r5.xyzw  // r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 136
+                                itof r7.xyzw, l(10000, 10000, 10000, 10000)
+                                mul r4.xyzw, r5.xyzw, r7.xyzw  // r4.x <- <ST2084TOLinear return value>.x; r4.y <- <ST2084TOLinear return value>.y; r4.z <- <ST2084TOLinear return value>.z; r4.w <- <ST2084TOLinear return value>.w
+                
+                #line 201
+                                mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 202
+                              else   // Prior locations: r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 203
+                                ieq r5.x, cb0[12].w, l(1)
+                                if_nz r5.x
+                
+                #line 205
+                                  nop 
+                                  mov r4.xyzw, r4.xyzw
+                
+                #line 151
+                                  log r5.xyzw, r4.xyzw
+                                  mul r5.xyzw, r5.xyzw, l(2.222222, 2.222222, 2.222222, 2.222222)
+                                  exp r4.xyzw, r5.xyzw  // r4.x <- <BT709TOLinear return value>.x; r4.y <- <BT709TOLinear return value>.y; r4.z <- <BT709TOLinear return value>.z; r4.w <- <BT709TOLinear return value>.w
+                
+                #line 205
+                                  mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 206
+                                else   // Prior locations: r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 209
+                                  mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 210
+                                endif 
+                              endif 
+                            endif 
+                
+                #line 294
+                            mov r4.xyzw, r4.xyzw  // r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 295
+                            nop 
+                            mov r4.xyzw, r4.xyzw
+                
+                #line 221
+                            ine r5.x, cb0[13].z, cb0[13].y
+                            if_nz r5.x
+                
+                #line 223
+                              nop 
+                              mov r4.xyzw, r4.xyzw
+                
+                #line 216
+                              dp4 r5.x, r4.xyzw, cb1[8].xyzw
+                              dp4 r5.y, r4.xyzw, cb1[9].xyzw
+                              dp4 r5.z, r4.xyzw, cb1[10].xyzw
+                              itof r7.xyz, l(0, 0, 0, 0)
+                              max r4.xyz, r5.xyzx, r7.xyzx  // r4.x <- <PrimariesTransform return value>.x; r4.y <- <PrimariesTransform return value>.y; r4.z <- <PrimariesTransform return value>.z
+                
+                #line 223
+                              mov r4.xyz, r4.xyzx  // r4.x <- <transformPrimaries return value>.x; r4.y <- <transformPrimaries return value>.y; r4.z <- <transformPrimaries return value>.z
+                
+                #line 224
+                            else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 227
+                              mov r4.xyz, r4.xyzx  // r4.x <- <transformPrimaries return value>.x; r4.y <- <transformPrimaries return value>.y; r4.z <- <transformPrimaries return value>.z
+                
+                #line 228
+                            endif 
+                
+                #line 295
+                            mov r4.xyz, r4.xyzx
+                
+                #line 296
+                            nop 
+                            mov r4.xyz, r4.xyzx
+                
+                #line 233
+                            ieq r4.w, cb0[13].x, l(1)
+                            ieq r5.x, cb0[13].x, l(4)
+                            or r4.w, r4.w, r5.x
+                            if_nz r4.w
+                
+                #line 235
+                              ieq r4.w, cb0[12].w, l(16)
+                              if_nz r4.w
+                
+                #line 237
+                                nop 
+                                mov r4.xyz, r4.xyzx
+                
+                #line 188
+                                nop 
+                                mov r5.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                                mov r4.w, l(0.150000)  // r4.w <- A
+                                mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                                mul r7.xyz, r5.xyzx, r4.wwww
+                                add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                mul r7.xyz, r5.xyzx, r7.xyzx
+                                add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                mul r8.xyz, r5.xyzx, r4.wwww
+                                add r8.xyz, r5.wwww, r8.xyzx
+                                mul r5.xyz, r5.xyzx, r8.xyzx
+                                add r5.xyz, r5.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                div r5.xyz, r7.xyzx, r5.xyzx
+                                mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                add r5.xyz, r5.xyzx, r7.xyzx  // r5.x <- <hable return value>.x; r5.y <- <hable return value>.y; r5.z <- <hable return value>.z
+                
+                #line 188
+                                mov r5.xyz, r5.xyzx  // r5.x <- HABLE_DIV.x; r5.y <- HABLE_DIV.y; r5.z <- HABLE_DIV.z
+                
+                #line 189
+                                nop 
+                                mul r7.xyz, r4.xyzx, cb0[14].yyyy
+                
+                #line 182
+                                mov r4.w, l(0.150000)
+                                mov r5.w, l(0.500000)
+                
+                #line 183
+                                mul r8.xyz, r7.xyzx, r4.wwww
+                                add r8.xyz, r8.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                mul r8.xyz, r7.xyzx, r8.xyzx
+                                add r8.xyz, r8.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                mul r9.xyz, r7.xyzx, r4.wwww
+                                add r9.xyz, r5.wwww, r9.xyzx
+                                mul r7.xyz, r7.xyzx, r9.xyzx
+                                add r7.xyz, r7.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                div r7.xyz, r8.xyzx, r7.xyzx
+                                mov r8.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                add r7.xyz, r7.xyzx, r8.xyzx  // r7.x <- <hable return value>.x; r7.y <- <hable return value>.y; r7.z <- <hable return value>.z
+                
+                #line 189
+                                div r4.xyz, r7.xyzx, r5.xyzx  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z
+                
+                #line 190
+                                mov r4.xyz, r4.xyzx  // r4.x <- <HDRToneMapping return value>.x; r4.y <- <HDRToneMapping return value>.y; r4.z <- <HDRToneMapping return value>.z
+                
+                #line 237
+                                mov r4.xyz, r4.xyzx  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 238
+                              else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 239
+                                ieq r4.w, cb0[12].w, l(18)
+                                if_nz r4.w
+                
+                #line 241
+                                  nop 
+                                  mov r4.xyz, r4.xyzx
+                
+                #line 188
+                                  nop 
+                                  mov r5.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                                  mov r4.w, l(0.150000)  // r4.w <- A
+                                  mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                                  mul r7.xyz, r5.xyzx, r4.wwww
+                                  add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                  mul r7.xyz, r5.xyzx, r7.xyzx
+                                  add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                  mul r8.xyz, r5.xyzx, r4.wwww
+                                  add r8.xyz, r5.wwww, r8.xyzx
+                                  mul r5.xyz, r5.xyzx, r8.xyzx
+                                  add r5.xyz, r5.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                  div r5.xyz, r7.xyzx, r5.xyzx
+                                  mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                  add r5.xyz, r5.xyzx, r7.xyzx  // r5.x <- <hable return value>.x; r5.y <- <hable return value>.y; r5.z <- <hable return value>.z
+                
+                #line 188
+                                  mov r5.xyz, r5.xyzx  // r5.x <- HABLE_DIV.x; r5.y <- HABLE_DIV.y; r5.z <- HABLE_DIV.z
+                
+                #line 189
+                                  nop 
+                                  mul r7.xyz, r4.xyzx, cb0[14].yyyy
+                
+                #line 182
+                                  mov r4.w, l(0.150000)
+                                  mov r5.w, l(0.500000)
+                
+                #line 183
+                                  mul r8.xyz, r7.xyzx, r4.wwww
+                                  add r8.xyz, r8.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                  mul r8.xyz, r7.xyzx, r8.xyzx
+                                  add r8.xyz, r8.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                  mul r9.xyz, r7.xyzx, r4.wwww
+                                  add r9.xyz, r5.wwww, r9.xyzx
+                                  mul r7.xyz, r7.xyzx, r9.xyzx
+                                  add r7.xyz, r7.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                  div r7.xyz, r8.xyzx, r7.xyzx
+                                  mov r8.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                  add r7.xyz, r7.xyzx, r8.xyzx  // r7.x <- <hable return value>.x; r7.y <- <hable return value>.y; r7.z <- <hable return value>.z
+                
+                #line 189
+                                  div r4.xyz, r7.xyzx, r5.xyzx  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z
+                
+                #line 190
+                                  mov r4.xyz, r4.xyzx  // r4.x <- <HDRToneMapping return value>.x; r4.y <- <HDRToneMapping return value>.y; r4.z <- <HDRToneMapping return value>.z
+                
+                #line 241
+                                  mov r4.xyz, r4.xyzx  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 242
+                                else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 245
+                                  mul r4.xyz, r4.xyzx, cb0[14].yyyy  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 246
+                                endif 
+                              endif 
+                
+                #line 247
+                            else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 250
+                              mov r4.xyz, r4.xyzx  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 251
+                            endif 
+                
+                #line 296
+                            mov r4.xyz, r4.xyzx
+                
+                #line 297
+                            nop 
+                            mov r4.xyz, r4.xyzx
+                
+                #line 261
+                            ieq r4.w, cb0[12].w, cb0[13].x
+                            if_nz r4.w
+                
+                #line 263
+                              mov r6.xyz, r4.xyzx
+                
+                #line 264
+                            endif   // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 265
+                            if_z r4.w
+                              ieq r4.w, cb0[13].x, l(16)
+                              if_nz r4.w
+                
+                #line 267
+                                nop 
+                                mov r4.xyz, r4.xyzx
+                
+                #line 169
+                                mov r4.w, l(0.159302)  // r4.w <- ST2084_m1
+                
+                #line 170
+                                mov r5.x, l(78.843750)  // r5.x <- ST2084_m2
+                
+                #line 171
+                                mov r5.y, l(0.835938)  // r5.y <- ST2084_c1
+                
+                #line 172
+                                mov r5.z, l(18.851562)  // r5.z <- ST2084_c2
+                
+                #line 173
+                                mov r5.w, l(18.687500)  // r5.w <- ST2084_c3
+                
+                #line 174
+                                itof r7.xyz, l(1000, 1000, 1000, 0)
+                                div r7.xyz, r4.xyzx, r7.xyzx
+                                log r7.xyz, r7.xyzx
+                                mul r7.xyz, r4.wwww, r7.xyzx
+                                exp r7.xyz, r7.xyzx  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z
+                
+                #line 175
+                                mul r8.xyz, r5.zzzz, r7.xyzx
+                                add r8.xyz, r5.yyyy, r8.xyzx
+                                itof r9.xyz, l(1, 1, 1, 0)
+                                mul r5.yzw, r5.wwww, r7.xxyz
+                                add r5.yzw, r5.yyzw, r9.xxyz
+                                div r5.yzw, r8.xxyz, r5.yyzw  // r5.y <- rgb.x; r5.z <- rgb.y; r5.w <- rgb.z
+                
+                #line 176
+                                log r5.yzw, r5.yyzw
+                                mul r5.xyz, r5.yzwy, r5.xxxx
+                                exp r6.xyz, r5.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 177
+                                mov r6.xyz, r6.xyzx  // r6.x <- <LineTOST2084 return value>.x; r6.y <- <LineTOST2084 return value>.y; r6.z <- <LineTOST2084 return value>.z
+                
+                #line 267
+                                mov r6.xyz, r6.xyzx  // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 268
+                              else 
+                
+                #line 269
+                                ieq r4.w, cb0[13].x, l(18)
+                                if_nz r4.w
+                
+                #line 271
+                                  mov r6.xyz, r4.xyzx
+                
+                #line 272
+                                else 
+                
+                #line 273
+                                  ieq r4.w, cb0[13].x, l(1)
+                                  if_nz r4.w
+                
+                #line 275
+                                    log r5.xyz, r4.xyzx
+                                    mul r5.xyz, r5.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                                    exp r6.xyz, r5.xyzx
+                
+                #line 276
+                                  else 
+                
+                #line 277
+                                    ieq r4.w, cb0[13].x, l(4)
+                                    if_nz r4.w
+                
+                #line 279
+                                      log r5.xyz, r4.xyzx
+                                      mul r5.xyz, r5.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                                      exp r6.xyz, r5.xyzx
+                
+                #line 280
+                                    else 
+                
+                #line 283
+                                      mov r6.xyz, r4.xyzx
+                
+                #line 284
+                                    endif 
+                                  endif 
+                                endif 
+                              endif 
+                            endif 
+                
+                #line 297
+                            mov r6.xyz, r6.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 298
+                            nop 
+                            mov r6.xyz, r6.xyzx
+                
+                #line 256
+                            mov r6.xyz, r6.xyzx  // r6.x <- <adjustRange return value>.x; r6.y <- <adjustRange return value>.y; r6.z <- <adjustRange return value>.z
+                
+                #line 298
+                            mov r6.xyz, r6.xyzx
+                
+                #line 299
+                            nop 
+                            mov r6.xyz, r6.xyzx
+                
+                #line 289
+                            mov r6.xyz, r6.xyzx  // r6.x <- <reorderPlanes return value>.x; r6.y <- <reorderPlanes return value>.y; r6.z <- <reorderPlanes return value>.z
+                
+                #line 299
+                            mov r6.xyz, r6.xyzx
+                
+                #line 300
+                            itof r6.w, l(1)  // r6.w <- <RenderFloat return value>.w
+                            mov r6.xyz, r6.xyzx  // r6.x <- <RenderFloat return value>.x; r6.y <- <RenderFloat return value>.y; r6.z <- <RenderFloat return value>.z
+                
+                #line 356
+                            mov r6.xyzw, r6.xyzw  // r6.x <- rgba.x; r6.y <- rgba.y; r6.z <- rgba.z; r6.w <- rgba.w
+                
+                #line 357
+                            mov r6.xyzw, r6.xyzw  // r6.x <- <GetRGBA return value>.x; r6.y <- <GetRGBA return value>.y; r6.z <- <GetRGBA return value>.z; r6.w <- <GetRGBA return value>.w
+                
+                #line 358
+                          else 
+                
+                #line 359
+                            ieq r4.x, cb0[12].x, l(7)
+                            if_nz r4.x
+                
+                #line 361
+                              sample_indexable(texture2d)(float,float,float,float) r4.xyzw, v1.xyxx, t0.xyzw, s0  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w
+                
+                #line 362
+                              nop 
+                              mov r4.xyzw, r4.xyzw
+                
+                #line 294
+                              nop 
+                              mov r4.xyzw, r4.xyzw
+                
+                #line 195
+                              ieq r5.x, cb0[12].w, cb0[13].x
+                              if_nz r5.x
+                
+                #line 197
+                                mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 198
+                              else 
+                
+                #line 199
+                                ieq r5.x, cb0[12].w, l(16)
+                                if_nz r5.x
+                
+                #line 201
+                                  nop 
+                                  mov r4.xyzw, r4.xyzw
+                
+                #line 130
+                                  mov r5.x, l(0.835938)  // r5.x <- ST2084_c1
+                
+                #line 131
+                                  mov r5.y, l(18.851562)  // r5.y <- ST2084_c2
+                
+                #line 132
+                                  mov r5.z, l(18.687500)  // r5.z <- ST2084_c3
+                
+                #line 133
+                                  itof r7.xyzw, l(0, 0, 0, 0)
+                                  max r7.xyzw, r4.xyzw, r7.xyzw
+                                  log r7.xyzw, r7.xyzw
+                                  mul r7.xyzw, r7.xyzw, l(0.012683, 0.012683, 0.012683, 0.012683)
+                                  exp r7.xyzw, r7.xyzw  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z; r7.w <- rgb.w
+                
+                #line 134
+                                  mov r8.xyzw, -r5.xxxx
+                                  add r8.xyzw, r7.xyzw, r8.xyzw
+                                  max r8.xyzw, r8.xyzw, l(0.000000, 0.000000, 0.000000, 0.000000)
+                                  mul r7.xyzw, r5.zzzz, r7.xyzw
+                                  mov r7.xyzw, -r7.xyzw
+                                  add r5.xyzw, r5.yyyy, r7.xyzw
+                                  div r5.xyzw, r8.xyzw, r5.xyzw  // r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 135
+                                  log r5.xyzw, r5.xyzw
+                                  mul r5.xyzw, r5.xyzw, l(6.277395, 6.277395, 6.277395, 6.277395)
+                                  exp r5.xyzw, r5.xyzw  // r5.x <- rgb.x; r5.y <- rgb.y; r5.z <- rgb.z; r5.w <- rgb.w
+                
+                #line 136
+                                  itof r7.xyzw, l(10000, 10000, 10000, 10000)
+                                  mul r4.xyzw, r5.xyzw, r7.xyzw  // r4.x <- <ST2084TOLinear return value>.x; r4.y <- <ST2084TOLinear return value>.y; r4.z <- <ST2084TOLinear return value>.z; r4.w <- <ST2084TOLinear return value>.w
+                
+                #line 201
+                                  mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 202
+                                else   // Prior locations: r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 203
+                                  ieq r5.x, cb0[12].w, l(1)
+                                  if_nz r5.x
+                
+                #line 205
+                                    nop 
+                                    mov r4.xyzw, r4.xyzw
+                
+                #line 151
+                                    log r5.xyzw, r4.xyzw
+                                    mul r5.xyzw, r5.xyzw, l(2.222222, 2.222222, 2.222222, 2.222222)
+                                    exp r4.xyzw, r5.xyzw  // r4.x <- <BT709TOLinear return value>.x; r4.y <- <BT709TOLinear return value>.y; r4.z <- <BT709TOLinear return value>.z; r4.w <- <BT709TOLinear return value>.w
+                
+                #line 205
+                                    mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 206
+                                  else   // Prior locations: r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 209
+                                    mov r4.xyzw, r4.xyzw  // r4.x <- <sourceToLinear return value>.x; r4.y <- <sourceToLinear return value>.y; r4.z <- <sourceToLinear return value>.z; r4.w <- <sourceToLinear return value>.w
+                
+                #line 210
+                                  endif 
+                                endif 
+                              endif 
+                
+                #line 294
+                              mov r4.xyzw, r4.xyzw  // r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.w <- rgb.w
+                
+                #line 295
+                              nop 
+                              mov r4.xyzw, r4.xyzw
+                
+                #line 221
+                              ine r5.x, cb0[13].z, cb0[13].y
+                              if_nz r5.x
+                
+                #line 223
+                                nop 
+                                mov r4.xyzw, r4.xyzw
+                
+                #line 216
+                                dp4 r5.x, r4.xyzw, cb1[8].xyzw
+                                dp4 r5.y, r4.xyzw, cb1[9].xyzw
+                                dp4 r5.z, r4.xyzw, cb1[10].xyzw
+                                itof r7.xyz, l(0, 0, 0, 0)
+                                max r4.xyz, r5.xyzx, r7.xyzx  // r4.x <- <PrimariesTransform return value>.x; r4.y <- <PrimariesTransform return value>.y; r4.z <- <PrimariesTransform return value>.z
+                
+                #line 223
+                                mov r4.xyz, r4.xyzx  // r4.x <- <transformPrimaries return value>.x; r4.y <- <transformPrimaries return value>.y; r4.z <- <transformPrimaries return value>.z
+                
+                #line 224
+                              else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 227
+                                mov r4.xyz, r4.xyzx  // r4.x <- <transformPrimaries return value>.x; r4.y <- <transformPrimaries return value>.y; r4.z <- <transformPrimaries return value>.z
+                
+                #line 228
+                              endif 
+                
+                #line 295
+                              mov r4.xyz, r4.xyzx
+                
+                #line 296
+                              nop 
+                              mov r4.xyz, r4.xyzx
+                
+                #line 233
+                              ieq r4.w, cb0[13].x, l(1)
+                              ieq r5.x, cb0[13].x, l(4)
+                              or r4.w, r4.w, r5.x
+                              if_nz r4.w
+                
+                #line 235
+                                ieq r4.w, cb0[12].w, l(16)
+                                if_nz r4.w
+                
+                #line 237
+                                  nop 
+                                  mov r4.xyz, r4.xyzx
+                
+                #line 188
+                                  nop 
+                                  mov r5.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                                  mov r4.w, l(0.150000)  // r4.w <- A
+                                  mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                                  mul r7.xyz, r5.xyzx, r4.wwww
+                                  add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                  mul r7.xyz, r5.xyzx, r7.xyzx
+                                  add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                  mul r8.xyz, r5.xyzx, r4.wwww
+                                  add r8.xyz, r5.wwww, r8.xyzx
+                                  mul r5.xyz, r5.xyzx, r8.xyzx
+                                  add r5.xyz, r5.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                  div r5.xyz, r7.xyzx, r5.xyzx
+                                  mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                  add r5.xyz, r5.xyzx, r7.xyzx  // r5.x <- <hable return value>.x; r5.y <- <hable return value>.y; r5.z <- <hable return value>.z
+                
+                #line 188
+                                  mov r5.xyz, r5.xyzx  // r5.x <- HABLE_DIV.x; r5.y <- HABLE_DIV.y; r5.z <- HABLE_DIV.z
+                
+                #line 189
+                                  nop 
+                                  mul r7.xyz, r4.xyzx, cb0[14].yyyy
+                
+                #line 182
+                                  mov r4.w, l(0.150000)
+                                  mov r5.w, l(0.500000)
+                
+                #line 183
+                                  mul r8.xyz, r7.xyzx, r4.wwww
+                                  add r8.xyz, r8.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                  mul r8.xyz, r7.xyzx, r8.xyzx
+                                  add r8.xyz, r8.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                  mul r9.xyz, r7.xyzx, r4.wwww
+                                  add r9.xyz, r5.wwww, r9.xyzx
+                                  mul r7.xyz, r7.xyzx, r9.xyzx
+                                  add r7.xyz, r7.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                  div r7.xyz, r8.xyzx, r7.xyzx
+                                  mov r8.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                  add r7.xyz, r7.xyzx, r8.xyzx  // r7.x <- <hable return value>.x; r7.y <- <hable return value>.y; r7.z <- <hable return value>.z
+                
+                #line 189
+                                  div r4.xyz, r7.xyzx, r5.xyzx  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z
+                
+                #line 190
+                                  mov r4.xyz, r4.xyzx  // r4.x <- <HDRToneMapping return value>.x; r4.y <- <HDRToneMapping return value>.y; r4.z <- <HDRToneMapping return value>.z
+                
+                #line 237
+                                  mov r4.xyz, r4.xyzx  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 238
+                                else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 239
+                                  ieq r4.w, cb0[12].w, l(18)
+                                  if_nz r4.w
+                
+                #line 241
+                                    nop 
+                                    mov r4.xyz, r4.xyzx
+                
+                #line 188
+                                    nop 
+                                    mov r5.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                                    mov r4.w, l(0.150000)  // r4.w <- A
+                                    mov r5.w, l(0.500000)  // r5.w <- B
+                
+                #line 183
+                                    mul r7.xyz, r5.xyzx, r4.wwww
+                                    add r7.xyz, r7.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                    mul r7.xyz, r5.xyzx, r7.xyzx
+                                    add r7.xyz, r7.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                    mul r8.xyz, r5.xyzx, r4.wwww
+                                    add r8.xyz, r5.wwww, r8.xyzx
+                                    mul r5.xyz, r5.xyzx, r8.xyzx
+                                    add r5.xyz, r5.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                    div r5.xyz, r7.xyzx, r5.xyzx
+                                    mov r7.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                    add r5.xyz, r5.xyzx, r7.xyzx  // r5.x <- <hable return value>.x; r5.y <- <hable return value>.y; r5.z <- <hable return value>.z
+                
+                #line 188
+                                    mov r5.xyz, r5.xyzx  // r5.x <- HABLE_DIV.x; r5.y <- HABLE_DIV.y; r5.z <- HABLE_DIV.z
+                
+                #line 189
+                                    nop 
+                                    mul r7.xyz, r4.xyzx, cb0[14].yyyy
+                
+                #line 182
+                                    mov r4.w, l(0.150000)
+                                    mov r5.w, l(0.500000)
+                
+                #line 183
+                                    mul r8.xyz, r7.xyzx, r4.wwww
+                                    add r8.xyz, r8.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                    mul r8.xyz, r7.xyzx, r8.xyzx
+                                    add r8.xyz, r8.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                    mul r9.xyz, r7.xyzx, r4.wwww
+                                    add r9.xyz, r5.wwww, r9.xyzx
+                                    mul r7.xyz, r7.xyzx, r9.xyzx
+                                    add r7.xyz, r7.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                    div r7.xyz, r8.xyzx, r7.xyzx
+                                    mov r8.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                    add r7.xyz, r7.xyzx, r8.xyzx  // r7.x <- <hable return value>.x; r7.y <- <hable return value>.y; r7.z <- <hable return value>.z
+                
+                #line 189
+                                    div r4.xyz, r7.xyzx, r5.xyzx  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z
+                
+                #line 190
+                                    mov r4.xyz, r4.xyzx  // r4.x <- <HDRToneMapping return value>.x; r4.y <- <HDRToneMapping return value>.y; r4.z <- <HDRToneMapping return value>.z
+                
+                #line 241
+                                    mov r4.xyz, r4.xyzx  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 242
+                                  else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 245
+                                    mul r4.xyz, r4.xyzx, cb0[14].yyyy  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 246
+                                  endif 
+                                endif 
+                
+                #line 247
+                              else   // Prior locations: r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z; r4.x <- rgb.x; r4.y <- rgb.y; r4.z <- rgb.z
+                
+                #line 250
+                                mov r4.xyz, r4.xyzx  // r4.x <- <toneMapping return value>.x; r4.y <- <toneMapping return value>.y; r4.z <- <toneMapping return value>.z
+                
+                #line 251
+                              endif 
+                
+                #line 296
+                              mov r4.xyz, r4.xyzx
+                
+                #line 297
+                              nop 
+                              mov r4.xyz, r4.xyzx
+                
+                #line 261
+                              ieq r4.w, cb0[12].w, cb0[13].x
+                              if_nz r4.w
+                
+                #line 263
+                                mov r6.xyz, r4.xyzx
+                
+                #line 264
+                              endif   // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 265
+                              if_z r4.w
+                                ieq r4.w, cb0[13].x, l(16)
+                                if_nz r4.w
+                
+                #line 267
+                                  nop 
+                                  mov r4.xyz, r4.xyzx
+                
+                #line 169
+                                  mov r4.w, l(0.159302)  // r4.w <- ST2084_m1
+                
+                #line 170
+                                  mov r5.x, l(78.843750)  // r5.x <- ST2084_m2
+                
+                #line 171
+                                  mov r5.y, l(0.835938)  // r5.y <- ST2084_c1
+                
+                #line 172
+                                  mov r5.z, l(18.851562)  // r5.z <- ST2084_c2
+                
+                #line 173
+                                  mov r5.w, l(18.687500)  // r5.w <- ST2084_c3
+                
+                #line 174
+                                  itof r7.xyz, l(1000, 1000, 1000, 0)
+                                  div r7.xyz, r4.xyzx, r7.xyzx
+                                  log r7.xyz, r7.xyzx
+                                  mul r7.xyz, r4.wwww, r7.xyzx
+                                  exp r7.xyz, r7.xyzx  // r7.x <- rgb.x; r7.y <- rgb.y; r7.z <- rgb.z
+                
+                #line 175
+                                  mul r8.xyz, r5.zzzz, r7.xyzx
+                                  add r8.xyz, r5.yyyy, r8.xyzx
+                                  itof r9.xyz, l(1, 1, 1, 0)
+                                  mul r5.yzw, r5.wwww, r7.xxyz
+                                  add r5.yzw, r5.yyzw, r9.xxyz
+                                  div r5.yzw, r8.xxyz, r5.yyzw  // r5.y <- rgb.x; r5.z <- rgb.y; r5.w <- rgb.z
+                
+                #line 176
+                                  log r5.yzw, r5.yyzw
+                                  mul r5.xyz, r5.yzwy, r5.xxxx
+                                  exp r6.xyz, r5.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 177
+                                  mov r6.xyz, r6.xyzx  // r6.x <- <LineTOST2084 return value>.x; r6.y <- <LineTOST2084 return value>.y; r6.z <- <LineTOST2084 return value>.z
+                
+                #line 267
+                                  mov r6.xyz, r6.xyzx  // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 268
+                                else 
+                
+                #line 269
+                                  ieq r4.w, cb0[13].x, l(18)
+                                  if_nz r4.w
+                
+                #line 271
+                                    mov r6.xyz, r4.xyzx
+                
+                #line 272
+                                  else 
+                
+                #line 273
+                                    ieq r4.w, cb0[13].x, l(1)
+                                    if_nz r4.w
+                
+                #line 275
+                                      log r5.xyz, r4.xyzx
+                                      mul r5.xyz, r5.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                                      exp r6.xyz, r5.xyzx
+                
+                #line 276
+                                    else 
+                
+                #line 277
+                                      ieq r4.w, cb0[13].x, l(4)
+                                      if_nz r4.w
+                
+                #line 279
+                                        log r5.xyz, r4.xyzx
+                                        mul r5.xyz, r5.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                                        exp r6.xyz, r5.xyzx
+                
+                #line 280
+                                      else 
+                
+                #line 283
+                                        mov r6.xyz, r4.xyzx
+                
+                #line 284
+                                      endif 
+                                    endif 
+                                  endif 
+                                endif 
+                              endif 
+                
+                #line 297
+                              mov r6.xyz, r6.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 298
+                              nop 
+                              mov r6.xyz, r6.xyzx
+                
+                #line 256
+                              mov r6.xyz, r6.xyzx  // r6.x <- <adjustRange return value>.x; r6.y <- <adjustRange return value>.y; r6.z <- <adjustRange return value>.z
+                
+                #line 298
+                              mov r6.xyz, r6.xyzx
+                
+                #line 299
+                              nop 
+                              mov r6.xyz, r6.xyzx
+                
+                #line 289
+                              mov r6.xyz, r6.xyzx  // r6.x <- <reorderPlanes return value>.x; r6.y <- <reorderPlanes return value>.y; r6.z <- <reorderPlanes return value>.z
+                
+                #line 299
+                              mov r6.xyz, r6.xyzx
+                
+                #line 300
+                              itof r6.w, l(1)  // r6.w <- <RenderFloat return value>.w
+                              mov r6.xyz, r6.xyzx  // r6.x <- <RenderFloat return value>.x; r6.y <- <RenderFloat return value>.y; r6.z <- <RenderFloat return value>.z
+                
+                #line 362
+                              mov r6.xyzw, r6.xyzw  // r6.x <- rgba.x; r6.y <- rgba.y; r6.z <- rgba.z; r6.w <- rgba.w
+                
+                #line 363
+                              mov r6.xyzw, r6.xyzw  // r6.x <- <GetRGBA return value>.x; r6.y <- <GetRGBA return value>.y; r6.z <- <GetRGBA return value>.z; r6.w <- <GetRGBA return value>.w
+                
+                #line 364
+                            else 
+                
+                #line 365
+                              ieq r4.x, cb0[12].x, l(8)
+                              if_nz r4.x
+                
+                #line 367
+                                nop 
+                
+                #line 75
+                                sample_indexable(texture2d)(float,float,float,float) r4.x, v1.xyxx, t0.xyzw, s0
+                                itof r4.y, l(64)
+                                mul r4.x, r4.y, r4.x  // r4.x <- y
+                
+                #line 77
+                                sample_indexable(texture2d)(float,float,float,float) r5.x, v1.xyxx, t1.xyzw, s0
+                                itof r5.y, l(64)
+                                mul r4.y, r5.y, r5.x  // r4.y <- u
+                
+                #line 78
+                                sample_indexable(texture2d)(float,float,float,float) r5.x, v1.xyxx, t2.xyzw, s0
+                                itof r5.y, l(64)
+                                mul r4.z, r5.y, r5.x  // r4.z <- v
+                
+                #line 80
+                                mov r4.w, l(1.000000)
+                                mov r4.xyzw, r4.xyzw  // r4.x <- <PSPlanar42010_Reverse return value>.x; r4.y <- <PSPlanar42010_Reverse return value>.y; r4.z <- <PSPlanar42010_Reverse return value>.z; r4.w <- <PSPlanar42010_Reverse return value>.w
+                
+                #line 367
+                                mov r4.xyzw, r4.xyzw  // r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r4.w <- rgba.w
+                
+                #line 369
+                                dp4 r5.x, r4.xyzw, cb1[0].xyzw  // r5.x <- rr.x
+                                dp4 r5.y, r4.xyzw, cb1[1].xyzw  // r5.y <- rr.y
+                                dp4 r5.z, r4.xyzw, cb1[2].xyzw  // r5.z <- rr.z
+                                dp4 r5.w, r4.xyzw, cb1[3].xyzw  // r5.w <- rr.w
+                
+                #line 370
+                                dp4 r0.x, r5.xyzw, r0.xyzw
+                                dp4 r0.y, r5.xyzw, r1.xyzw
+                                dp4 r0.z, r5.xyzw, r2.xyzw
+                                dp4 r0.w, r5.xyzw, r3.xyzw
+                                itof r1.xyzw, l(0, 0, 0, 0)
+                                max r0.xyzw, r0.xyzw, r1.xyzw  // r0.x <- rgbarsp.x; r0.y <- rgbarsp.y; r0.z <- rgbarsp.z; r0.w <- rgbarsp.w
+                
+                #line 371
+                                nop 
+                                mov r0.xyzw, r0.xyzw
+                
+                #line 294
+                                nop 
+                                mov r0.xyzw, r0.xyzw
+                
+                #line 195
+                                ieq r1.x, cb0[12].w, cb0[13].x
+                                if_nz r1.x
+                
+                #line 197
+                                  mov r0.xyzw, r0.xyzw  // r0.x <- <sourceToLinear return value>.x; r0.y <- <sourceToLinear return value>.y; r0.z <- <sourceToLinear return value>.z; r0.w <- <sourceToLinear return value>.w
+                
+                #line 198
+                                else 
+                
+                #line 199
+                                  ieq r1.x, cb0[12].w, l(16)
+                                  if_nz r1.x
+                
+                #line 201
+                                    nop 
+                                    mov r0.xyzw, r0.xyzw
+                
+                #line 130
+                                    mov r1.x, l(0.835938)  // r1.x <- ST2084_c1
+                
+                #line 131
+                                    mov r1.y, l(18.851562)  // r1.y <- ST2084_c2
+                
+                #line 132
+                                    mov r1.z, l(18.687500)  // r1.z <- ST2084_c3
+                
+                #line 133
+                                    itof r2.xyzw, l(0, 0, 0, 0)
+                                    max r2.xyzw, r0.xyzw, r2.xyzw
+                                    log r2.xyzw, r2.xyzw
+                                    mul r2.xyzw, r2.xyzw, l(0.012683, 0.012683, 0.012683, 0.012683)
+                                    exp r2.xyzw, r2.xyzw  // r2.x <- rgb.x; r2.y <- rgb.y; r2.z <- rgb.z; r2.w <- rgb.w
+                
+                #line 134
+                                    mov r3.xyzw, -r1.xxxx
+                                    add r3.xyzw, r2.xyzw, r3.xyzw
+                                    max r3.xyzw, r3.xyzw, l(0.000000, 0.000000, 0.000000, 0.000000)
+                                    mul r2.xyzw, r1.zzzz, r2.xyzw
+                                    mov r2.xyzw, -r2.xyzw
+                                    add r1.xyzw, r1.yyyy, r2.xyzw
+                                    div r1.xyzw, r3.xyzw, r1.xyzw  // r1.x <- rgb.x; r1.y <- rgb.y; r1.z <- rgb.z; r1.w <- rgb.w
+                
+                #line 135
+                                    log r1.xyzw, r1.xyzw
+                                    mul r1.xyzw, r1.xyzw, l(6.277395, 6.277395, 6.277395, 6.277395)
+                                    exp r1.xyzw, r1.xyzw  // r1.x <- rgb.x; r1.y <- rgb.y; r1.z <- rgb.z; r1.w <- rgb.w
+                
+                #line 136
+                                    itof r2.xyzw, l(10000, 10000, 10000, 10000)
+                                    mul r0.xyzw, r1.xyzw, r2.xyzw  // r0.x <- <ST2084TOLinear return value>.x; r0.y <- <ST2084TOLinear return value>.y; r0.z <- <ST2084TOLinear return value>.z; r0.w <- <ST2084TOLinear return value>.w
+                
+                #line 201
+                                    mov r0.xyzw, r0.xyzw  // r0.x <- <sourceToLinear return value>.x; r0.y <- <sourceToLinear return value>.y; r0.z <- <sourceToLinear return value>.z; r0.w <- <sourceToLinear return value>.w
+                
+                #line 202
+                                  else   // Prior locations: r2.x <- yuv2rgbmatrix._m02; r2.y <- yuv2rgbmatrix._m12; r2.z <- yuv2rgbmatrix._m22; r2.w <- yuv2rgbmatrix._m32; r3.x <- yuv2rgbmatrix._m03; r3.y <- yuv2rgbmatrix._m13; r3.z <- yuv2rgbmatrix._m23; r3.w <- yuv2rgbmatrix._m33; r0.x <- rgbarsp.x; r0.y <- rgbarsp.y; r0.z <- rgbarsp.z; r0.w <- rgbarsp.w; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z; r0.w <- rgb.w; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z; r0.w <- rgb.w
+                
+                #line 203
+                                    ieq r1.x, cb0[12].w, l(1)
+                                    if_nz r1.x
+                
+                #line 205
+                                      nop 
+                                      mov r0.xyzw, r0.xyzw
+                
+                #line 151
+                                      log r1.xyzw, r0.xyzw
+                                      mul r1.xyzw, r1.xyzw, l(2.222222, 2.222222, 2.222222, 2.222222)
+                                      exp r0.xyzw, r1.xyzw  // r0.x <- <BT709TOLinear return value>.x; r0.y <- <BT709TOLinear return value>.y; r0.z <- <BT709TOLinear return value>.z; r0.w <- <BT709TOLinear return value>.w
+                
+                #line 205
+                                      mov r0.xyzw, r0.xyzw  // r0.x <- <sourceToLinear return value>.x; r0.y <- <sourceToLinear return value>.y; r0.z <- <sourceToLinear return value>.z; r0.w <- <sourceToLinear return value>.w
+                
+                #line 206
+                                    else   // Prior locations: r0.x <- rgbarsp.x; r0.y <- rgbarsp.y; r0.z <- rgbarsp.z; r0.w <- rgbarsp.w; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z; r0.w <- rgb.w; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z; r0.w <- rgb.w
+                
+                #line 209
+                                      mov r0.xyzw, r0.xyzw  // r0.x <- <sourceToLinear return value>.x; r0.y <- <sourceToLinear return value>.y; r0.z <- <sourceToLinear return value>.z; r0.w <- <sourceToLinear return value>.w
+                
+                #line 210
+                                    endif 
+                                  endif 
+                                endif 
+                
+                #line 294
+                                mov r0.xyzw, r0.xyzw  // r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z; r0.w <- rgb.w
+                
+                #line 295
+                                nop 
+                                mov r0.xyzw, r0.xyzw
+                
+                #line 221
+                                ine r1.x, cb0[13].z, cb0[13].y
+                                if_nz r1.x
+                
+                #line 223
+                                  nop 
+                                  mov r0.xyzw, r0.xyzw
+                
+                #line 216
+                                  dp4 r1.x, r0.xyzw, cb1[8].xyzw
+                                  dp4 r1.y, r0.xyzw, cb1[9].xyzw
+                                  dp4 r1.z, r0.xyzw, cb1[10].xyzw
+                                  itof r2.xyz, l(0, 0, 0, 0)
+                                  max r0.xyz, r1.xyzx, r2.xyzx  // r0.x <- <PrimariesTransform return value>.x; r0.y <- <PrimariesTransform return value>.y; r0.z <- <PrimariesTransform return value>.z
+                
+                #line 223
+                                  mov r0.xyz, r0.xyzx  // r0.x <- <transformPrimaries return value>.x; r0.y <- <transformPrimaries return value>.y; r0.z <- <transformPrimaries return value>.z
+                
+                #line 224
+                                else   // Prior locations: r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z
+                
+                #line 227
+                                  mov r0.xyz, r0.xyzx  // r0.x <- <transformPrimaries return value>.x; r0.y <- <transformPrimaries return value>.y; r0.z <- <transformPrimaries return value>.z
+                
+                #line 228
+                                endif 
+                
+                #line 295
+                                mov r0.xyz, r0.xyzx
+                
+                #line 296
+                                nop 
+                                mov r0.xyz, r0.xyzx
+                
+                #line 233
+                                ieq r0.w, cb0[13].x, l(1)
+                                ieq r1.x, cb0[13].x, l(4)
+                                or r0.w, r0.w, r1.x
+                                if_nz r0.w
+                
+                #line 235
+                                  ieq r0.w, cb0[12].w, l(16)
+                                  if_nz r0.w
+                
+                #line 237
+                                    nop 
+                                    mov r0.xyz, r0.xyzx
+                
+                #line 188
+                                    nop 
+                                    mov r1.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                                    mov r0.w, l(0.150000)  // r0.w <- A
+                                    mov r1.w, l(0.500000)  // r1.w <- B
+                
+                #line 183
+                                    mul r2.xyz, r1.xyzx, r0.wwww
+                                    add r2.xyz, r2.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                    mul r2.xyz, r1.xyzx, r2.xyzx
+                                    add r2.xyz, r2.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                    mul r3.xyz, r1.xyzx, r0.wwww
+                                    add r3.xyz, r1.wwww, r3.xyzx
+                                    mul r1.xyz, r1.xyzx, r3.xyzx
+                                    add r1.xyz, r1.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                    div r1.xyz, r2.xyzx, r1.xyzx
+                                    mov r2.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                    add r1.xyz, r1.xyzx, r2.xyzx  // r1.x <- <hable return value>.x; r1.y <- <hable return value>.y; r1.z <- <hable return value>.z
+                
+                #line 188
+                                    mov r1.xyz, r1.xyzx  // r1.x <- HABLE_DIV.x; r1.y <- HABLE_DIV.y; r1.z <- HABLE_DIV.z
+                
+                #line 189
+                                    nop 
+                                    mul r2.xyz, r0.xyzx, cb0[14].yyyy
+                
+                #line 182
+                                    mov r0.w, l(0.150000)
+                                    mov r1.w, l(0.500000)
+                
+                #line 183
+                                    mul r3.xyz, r2.xyzx, r0.wwww
+                                    add r3.xyz, r3.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                    mul r3.xyz, r2.xyzx, r3.xyzx
+                                    add r3.xyz, r3.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                    mul r4.xyz, r2.xyzx, r0.wwww
+                                    add r4.xyz, r1.wwww, r4.xyzx
+                                    mul r2.xyz, r2.xyzx, r4.xyzx
+                                    add r2.xyz, r2.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                    div r2.xyz, r3.xyzx, r2.xyzx
+                                    mov r3.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                    add r2.xyz, r2.xyzx, r3.xyzx  // r2.x <- <hable return value>.x; r2.y <- <hable return value>.y; r2.z <- <hable return value>.z
+                
+                #line 189
+                                    div r0.xyz, r2.xyzx, r1.xyzx  // r0.x <- rgba.x; r0.y <- rgba.y; r0.z <- rgba.z
+                
+                #line 190
+                                    mov r0.xyz, r0.xyzx  // r0.x <- <HDRToneMapping return value>.x; r0.y <- <HDRToneMapping return value>.y; r0.z <- <HDRToneMapping return value>.z
+                
+                #line 237
+                                    mov r0.xyz, r0.xyzx  // r0.x <- <toneMapping return value>.x; r0.y <- <toneMapping return value>.y; r0.z <- <toneMapping return value>.z
+                
+                #line 238
+                                  else   // Prior locations: r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z
+                
+                #line 239
+                                    ieq r0.w, cb0[12].w, l(18)
+                                    if_nz r0.w
+                
+                #line 241
+                                      nop 
+                                      mov r0.xyz, r0.xyzx
+                
+                #line 188
+                                      nop 
+                                      mov r1.xyz, l(11.200000,11.200000,11.200000,0)
+                
+                #line 182
+                                      mov r0.w, l(0.150000)  // r0.w <- A
+                                      mov r1.w, l(0.500000)  // r1.w <- B
+                
+                #line 183
+                                      mul r2.xyz, r1.xyzx, r0.wwww
+                                      add r2.xyz, r2.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                      mul r2.xyz, r1.xyzx, r2.xyzx
+                                      add r2.xyz, r2.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                      mul r3.xyz, r1.xyzx, r0.wwww
+                                      add r3.xyz, r1.wwww, r3.xyzx
+                                      mul r1.xyz, r1.xyzx, r3.xyzx
+                                      add r1.xyz, r1.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                      div r1.xyz, r2.xyzx, r1.xyzx
+                                      mov r2.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                      add r1.xyz, r1.xyzx, r2.xyzx  // r1.x <- <hable return value>.x; r1.y <- <hable return value>.y; r1.z <- <hable return value>.z
+                
+                #line 188
+                                      mov r1.xyz, r1.xyzx  // r1.x <- HABLE_DIV.x; r1.y <- HABLE_DIV.y; r1.z <- HABLE_DIV.z
+                
+                #line 189
+                                      nop 
+                                      mul r2.xyz, r0.xyzx, cb0[14].yyyy
+                
+                #line 182
+                                      mov r0.w, l(0.150000)
+                                      mov r1.w, l(0.500000)
+                
+                #line 183
+                                      mul r3.xyz, r2.xyzx, r0.wwww
+                                      add r3.xyz, r3.xyzx, l(0.050000, 0.050000, 0.050000, 0.000000)
+                                      mul r3.xyz, r2.xyzx, r3.xyzx
+                                      add r3.xyz, r3.xyzx, l(0.004000, 0.004000, 0.004000, 0.000000)
+                                      mul r4.xyz, r2.xyzx, r0.wwww
+                                      add r4.xyz, r1.wwww, r4.xyzx
+                                      mul r2.xyz, r2.xyzx, r4.xyzx
+                                      add r2.xyz, r2.xyzx, l(0.060000, 0.060000, 0.060000, 0.000000)
+                                      div r2.xyz, r3.xyzx, r2.xyzx
+                                      mov r3.xyz, l(-0.066667,-0.066667,-0.066667,-0.000000)
+                                      add r2.xyz, r2.xyzx, r3.xyzx  // r2.x <- <hable return value>.x; r2.y <- <hable return value>.y; r2.z <- <hable return value>.z
+                
+                #line 189
+                                      div r0.xyz, r2.xyzx, r1.xyzx  // r0.x <- rgba.x; r0.y <- rgba.y; r0.z <- rgba.z
+                
+                #line 190
+                                      mov r0.xyz, r0.xyzx  // r0.x <- <HDRToneMapping return value>.x; r0.y <- <HDRToneMapping return value>.y; r0.z <- <HDRToneMapping return value>.z
+                
+                #line 241
+                                      mov r0.xyz, r0.xyzx  // r0.x <- <toneMapping return value>.x; r0.y <- <toneMapping return value>.y; r0.z <- <toneMapping return value>.z
+                
+                #line 242
+                                    else   // Prior locations: r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z
+                
+                #line 245
+                                      mul r0.xyz, r0.xyzx, cb0[14].yyyy  // r0.x <- <toneMapping return value>.x; r0.y <- <toneMapping return value>.y; r0.z <- <toneMapping return value>.z
+                
+                #line 246
+                                    endif 
+                                  endif 
+                
+                #line 247
+                                else   // Prior locations: r4.x <- rgba.x; r4.y <- rgba.y; r4.z <- rgba.z; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z; r0.x <- rgb.x; r0.y <- rgb.y; r0.z <- rgb.z
+                
+                #line 250
+                                  mov r0.xyz, r0.xyzx  // r0.x <- <toneMapping return value>.x; r0.y <- <toneMapping return value>.y; r0.z <- <toneMapping return value>.z
+                
+                #line 251
+                                endif 
+                
+                #line 296
+                                mov r0.xyz, r0.xyzx
+                
+                #line 297
+                                nop 
+                                mov r0.xyz, r0.xyzx
+                
+                #line 261
+                                ieq r0.w, cb0[12].w, cb0[13].x
+                                if_nz r0.w
+                
+                #line 263
+                                  mov r6.xyz, r0.xyzx
+                
+                #line 264
+                                endif   // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 265
+                                if_z r0.w
+                                  ieq r0.w, cb0[13].x, l(16)
+                                  if_nz r0.w
+                
+                #line 267
+                                    nop 
+                                    mov r0.xyz, r0.xyzx
+                
+                #line 169
+                                    mov r0.w, l(0.159302)  // r0.w <- ST2084_m1
+                
+                #line 170
+                                    mov r1.x, l(78.843750)  // r1.x <- ST2084_m2
+                
+                #line 171
+                                    mov r1.y, l(0.835938)  // r1.y <- ST2084_c1
+                
+                #line 172
+                                    mov r1.z, l(18.851562)  // r1.z <- ST2084_c2
+                
+                #line 173
+                                    mov r1.w, l(18.687500)  // r1.w <- ST2084_c3
+                
+                #line 174
+                                    itof r2.xyz, l(1000, 1000, 1000, 0)
+                                    div r2.xyz, r0.xyzx, r2.xyzx
+                                    log r2.xyz, r2.xyzx
+                                    mul r2.xyz, r0.wwww, r2.xyzx
+                                    exp r2.xyz, r2.xyzx  // r2.x <- rgb.x; r2.y <- rgb.y; r2.z <- rgb.z
+                
+                #line 175
+                                    mul r3.xyz, r1.zzzz, r2.xyzx
+                                    add r3.xyz, r1.yyyy, r3.xyzx
+                                    itof r4.xyz, l(1, 1, 1, 0)
+                                    mul r1.yzw, r1.wwww, r2.xxyz
+                                    add r1.yzw, r1.yyzw, r4.xxyz
+                                    div r1.yzw, r3.xxyz, r1.yyzw  // r1.y <- rgb.x; r1.z <- rgb.y; r1.w <- rgb.z
+                
+                #line 176
+                                    log r1.yzw, r1.yyzw
+                                    mul r1.xyz, r1.yzwy, r1.xxxx
+                                    exp r6.xyz, r1.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 177
+                                    mov r6.xyz, r6.xyzx  // r6.x <- <LineTOST2084 return value>.x; r6.y <- <LineTOST2084 return value>.y; r6.z <- <LineTOST2084 return value>.z
+                
+                #line 267
+                                    mov r6.xyz, r6.xyzx  // r6.x <- <linearToDisplay return value>.x; r6.y <- <linearToDisplay return value>.y; r6.z <- <linearToDisplay return value>.z
+                
+                #line 268
+                                  else 
+                
+                #line 269
+                                    ieq r0.w, cb0[13].x, l(18)
+                                    if_nz r0.w
+                
+                #line 271
+                                      mov r6.xyz, r0.xyzx
+                
+                #line 272
+                                    else 
+                
+                #line 273
+                                      ieq r0.w, cb0[13].x, l(1)
+                                      if_nz r0.w
+                
+                #line 275
+                                        log r1.xyz, r0.xyzx
+                                        mul r1.xyz, r1.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                                        exp r6.xyz, r1.xyzx
+                
+                #line 276
+                                      else 
+                
+                #line 277
+                                        ieq r0.w, cb0[13].x, l(4)
+                                        if_nz r0.w
+                
+                #line 279
+                                          log r1.xyz, r0.xyzx
+                                          mul r1.xyz, r1.xyzx, l(0.454545, 0.454545, 0.454545, 0.000000)
+                                          exp r6.xyz, r1.xyzx
+                
+                #line 280
+                                        else 
+                
+                #line 283
+                                          mov r6.xyz, r0.xyzx
+                
+                #line 284
+                                        endif 
+                                      endif 
+                                    endif 
+                                  endif 
+                                endif 
+                
+                #line 297
+                                mov r6.xyz, r6.xyzx  // r6.x <- rgb.x; r6.y <- rgb.y; r6.z <- rgb.z
+                
+                #line 298
+                                nop 
+                                mov r6.xyz, r6.xyzx
+                
+                #line 256
+                                mov r6.xyz, r6.xyzx  // r6.x <- <adjustRange return value>.x; r6.y <- <adjustRange return value>.y; r6.z <- <adjustRange return value>.z
+                
+                #line 298
+                                mov r6.xyz, r6.xyzx
+                
+                #line 299
+                                nop 
+                                mov r6.xyz, r6.xyzx
+                
+                #line 289
+                                mov r6.xyz, r6.xyzx  // r6.x <- <reorderPlanes return value>.x; r6.y <- <reorderPlanes return value>.y; r6.z <- <reorderPlanes return value>.z
+                
+                #line 299
+                                mov r6.xyz, r6.xyzx
+                
+                #line 300
+                                mov r6.xyz, r6.xyzx  // r6.x <- <RenderFloat return value>.x; r6.y <- <RenderFloat return value>.y; r6.z <- <RenderFloat return value>.z
+                
+                #line 371
+                                mov r6.xyz, r6.xyzx  // r6.x <- rgbarsp.x; r6.y <- rgbarsp.y; r6.z <- rgbarsp.z
+                
+                #line 372
+                                itof r6.w, l(1)  // r6.w <- rgbarsp.w
+                
+                #line 373
+                                mov r6.xyz, r6.xyzx  // r6.x <- <GetRGBA return value>.x; r6.y <- <GetRGBA return value>.y; r6.z <- <GetRGBA return value>.z
+                                mov r6.w, r6.w  // r6.w <- <GetRGBA return value>.w
+                
+                #line 374
+                              else   // Prior locations: r0.x <- yuv2rgbmatrix._m00; r0.y <- yuv2rgbmatrix._m10; r0.z <- yuv2rgbmatrix._m20; r0.w <- yuv2rgbmatrix._m30; r1.x <- yuv2rgbmatrix._m01; r1.y <- yuv2rgbmatrix._m11; r1.z <- yuv2rgbmatrix._m21; r1.w <- yuv2rgbmatrix._m31; r2.x <- yuv2rgbmatrix._m02; r2.y <- yuv2rgbmatrix._m12; r2.z <- yuv2rgbmatrix._m22; r2.w <- yuv2rgbmatrix._m32; r3.x <- yuv2rgbmatrix._m03; r3.y <- yuv2rgbmatrix._m13; r3.z <- yuv2rgbmatrix._m23; r3.w <- yuv2rgbmatrix._m33
+                
+                #line 377
+                                itof r6.xyzw, l(0, 1, 0, 1)  // r6.x <- <GetRGBA return value>.x; r6.y <- <GetRGBA return value>.y; r6.z <- <GetRGBA return value>.z; r6.w <- <GetRGBA return value>.w
+                
+                #line 378
                               endif 
                             endif 
                           endif 
@@ -448,13 +3643,13 @@ fxgroup
                   endif 
                 endif 
                 
-                #line 147
-                mov r1.xyzw, r1.xyzw  // r1.x <- rgba.x; r1.y <- rgba.y; r1.z <- rgba.z; r1.w <- rgba.w
+                #line 382
+                mov r6.xyzw, r6.xyzw  // r6.x <- rgba.x; r6.y <- rgba.y; r6.z <- rgba.z; r6.w <- rgba.w
                 
-                #line 148
-                mov o0.xyzw, r1.xyzw
+                #line 385
+                mov o0.xyzw, r6.xyzw
                 ret 
-                // Approximately 118 instruction slots used
+                // Approximately 1728 instruction slots used
                             
             };
         }

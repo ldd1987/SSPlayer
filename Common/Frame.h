@@ -4,6 +4,19 @@
 #include <memory>
 #include <deque>
 #include<mutex>
+extern "C" {
+#include "libavformat/avformat.h"
+#include "libavcodec/avcodec.h"
+#include "libavutil/avutil.h"
+#include "libavutil/rational.h"
+#include "libavdevice/avdevice.h"
+#include "libavutil/mathematics.h"
+#include "libswscale/swscale.h"
+#include "libswresample/swresample.h"
+#include <libavutil/time.h>
+#include <libavutil/mastering_display_metadata.h>
+}
+
 class CFrame
 {
 public:
@@ -29,6 +42,23 @@ public:
 	long long m_nTimesTamp;
 	long m_nBitPerSample;
 	long long m_nShowTime;
+	enum AVColorRange color_range;
+
+	enum AVColorPrimaries color_primaries;
+
+	enum AVColorTransferCharacteristic color_trc;
+
+	/**
+	 * YUV colorspace type.
+	 * - encoding: Set by user
+	 * - decoding: Set by libavcodec
+	 */
+	enum AVColorSpace colorspace;
+	bool hasDisplayMetadata;
+	bool hasLightMetadata;
+	AVMasteringDisplayMetadata displayMetadata;
+	AVContentLightMetadata lightMetadata;
+	int m_nPixBits;
 private:
 	unsigned char *m_pData;
 };

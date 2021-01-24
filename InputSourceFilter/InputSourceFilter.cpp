@@ -1,5 +1,6 @@
 #include "InputSourceFilter.h"
 #include "../Common/MediaTimer.h"
+#include "../Common/SSLogger.h"
 const int BUFFERSIZE = 125;
 #include <QFileInfo>
 CInputFileSource::CInputFileSource(CInputSourceParam &param) : CSSFilter(param.m_strFileName)
@@ -179,6 +180,7 @@ DWORD WINAPI  CInputFileSource::ReadFunc(LPVOID arg)
 				int nRet = avcodec_receive_frame(pThis->m_pstAudioCodecCtx, m_pstDecodedAudioFrame);
 				if (nRet < 0)
 				{
+					SS_LOG(LOG_INFO, "audio decoder error ret is:%d", ret);
 					break;
 				}
 				else
@@ -238,7 +240,7 @@ DWORD WINAPI  CInputFileSource::ReadFunc(LPVOID arg)
 			int nRet = avcodec_send_packet(pThis->m_pstAudioCodecCtx, &packet);
 			if (nRet < 0)
 			{
-				
+				SS_LOG(LOG_INFO, "avcodec_send_packet auido error m_uiIndex : %u", pThis->m_nIndex);
 			}
 			if (m_pstDecodedAudioFrame != NULL)
 			{
@@ -266,6 +268,7 @@ void CInputFileSource::SyncAudio()
 		if (m_bStartSupportData == false)
 		{
 			m_bStartSupportData = true;
+			m_bPlayVideo = true;
 		}
 	}
 	if (m_bStartSupportData == false)
@@ -303,6 +306,7 @@ void CInputFileSource::SyncAudio()
 		}
 		else if (nTempTime < -250 /*&& m_bDelAudioFrame*/)
 		{
+			SS_LOG(LOG_WARNING, "Audio slow and the time  is : %d", nTempTime);
 			
 		}
 			m_nLastAudioTime = frameaudio->m_nTimesTamp;
@@ -319,7 +323,7 @@ void CInputFileSource::SyncAudio()
 				{
 					if (framevideo->m_nTimesTamp > m_nLastAudioTime)
 					{
-						
+						SS_LOG(LOG_WARNING, "send audio time is:%lld, first video time is:%lld", m_nLastAudioTime, framevideo->m_nTimesTamp);
 					}
 					else
 					{
@@ -344,9 +348,10 @@ void CInputFileSource::DecoderVideo()
 	}
 	if (m_bStartSupportData == false)
 	{
-		if (m_ListVideo.Size() >= 25)
+		if (m_ListVideo.Size() >= m_nFrameRate > 0 ? m_nFrameRate : 25)
 		{
 			m_bStartSupportData = true;
+			m_bPlayVideo = true;
 			return;
 		}
 	}
@@ -364,6 +369,7 @@ void CInputFileSource::DecoderVideo()
 		bool bempty = false;
 		AVPacket packet;
 		av_init_packet(&packet);
+		packet.stream_index = m_nVideoIndex;
 		{
 			QMutexLocker stLocker(&m_MutexPacketVideo);
 			if (m_deqVideoPacket.size() <= 0)
@@ -402,7 +408,7 @@ void CInputFileSource::DecoderVideo()
 				int nRet = avcodec_send_packet(m_pstVideoCodecCtx, &packet);
 				if (nRet < 0)
 				{
-
+					SS_LOG(LOG_INFO, "avcodec_send_packet video error m_uiIndex : %u", m_nIndex);
 				}
 			}
 			while (1)
@@ -410,7 +416,8 @@ void CInputFileSource::DecoderVideo()
 				int nRet = avcodec_receive_frame(m_pstVideoCodecCtx, m_pstDecodedVideoBuffer);
 				if (nRet < 0)
 				{
-					
+					SS_LOG(LOG_INFO, "avcodec_receive_frame video error m_uiIndex : %u", m_nIndex);
+					SS_LOG(LOG_INFO, "decoder video error %d, and %s", nRet, strerror(nRet));
 					if (nRet == AVERROR_EOF)
 					{
 						m_bFlush = true;
@@ -457,6 +464,25 @@ void CInputFileSource::DecoderVideo()
 							stFrame->m_nLen = pixels_buffer_size;
 							stFrame->m_eFrameType = eVideoFrame;
 							stFrame->m_ePixType = eYUV420P;
+							stFrame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
+							stFrame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
+							stFrame->color_range = AVCOL_RANGE_MPEG;
+							stFrame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
+							stFrame->hasDisplayMetadata = false;
+							stFrame->hasLightMetadata = false;
+							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+							if (sd)
+							{
+								stFrame->displayMetadata = *(AVMasteringDisplayMetadata *)sd->data;
+								stFrame->hasDisplayMetadata = true;
+							}
+
+							sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+							if (sd)
+							{
+								stFrame->lightMetadata = *(AVContentLightMetadata *)sd->data;
+								stFrame->hasLightMetadata = true;
+							}
 							if (1)
 							{
 								stFrame->AllocMem(pixels_buffer_size);
@@ -503,6 +529,27 @@ void CInputFileSource::DecoderVideo()
 							stFrame->AllocMem(width * height * 3);
 							stFrame->m_eFrameType = eVideoFrame;
 							stFrame->m_ePixType = eYUV420P10;
+							stFrame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
+							stFrame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
+							stFrame->color_range = AVCOL_RANGE_MPEG;
+							stFrame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
+							stFrame->hasDisplayMetadata = false;
+							stFrame->hasLightMetadata = false;
+							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+							if (sd)
+							{
+								stFrame->displayMetadata = *(AVMasteringDisplayMetadata *)sd->data;
+								stFrame->hasDisplayMetadata = true;
+							}
+							
+							sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+							if (sd)
+							{
+								stFrame->lightMetadata = *(AVContentLightMetadata *)sd->data;
+								stFrame->hasLightMetadata = true;
+							}
+							
+
 							int a0 = 0, i;
 							int a1 = width * height * 2;
 							int a2 = a1 + width * height / 2;
@@ -539,7 +586,25 @@ void CInputFileSource::DecoderVideo()
 							frame->m_nHeight = height;
 							frame->m_nTimesTamp = 0;
 							frame->m_nLen = width * height * 4;
+							frame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
+							frame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
+							frame->color_range = AVCOL_RANGE_MPEG;
+							frame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
+							frame->hasDisplayMetadata = false;
+							frame->hasLightMetadata = false;
+							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+							if (sd)
+							{
+								frame->displayMetadata = *(AVMasteringDisplayMetadata *)sd->data;
+								frame->hasDisplayMetadata = true;
+							}
 
+							sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+							if (sd)
+							{
+								frame->lightMetadata = *(AVContentLightMetadata *)sd->data;
+								frame->hasLightMetadata = true;
+							}
 							frame->m_eFrameType = eVideoFrame;
 							frame->m_ePixType = eBGRA;
 							if (1)
@@ -580,7 +645,25 @@ void CInputFileSource::DecoderVideo()
 							frame->m_nHeight = height;
 							frame->m_nTimesTamp = 0;
 							frame->m_nLen = width * height * 4;
+							frame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
+							frame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
+							frame->color_range = AVCOL_RANGE_MPEG;
+							frame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
+							frame->hasDisplayMetadata = false;
+							frame->hasLightMetadata = false;
+							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+							if (sd)
+							{
+								frame->displayMetadata = *(AVMasteringDisplayMetadata *)sd->data;
+								frame->hasDisplayMetadata = true;
+							}
 
+							sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+							if (sd)
+							{
+								frame->lightMetadata = *(AVContentLightMetadata *)sd->data;
+								frame->hasLightMetadata = true;
+							}
 							frame->m_eFrameType = eVideoFrame;
 							frame->m_ePixType = eRGBA;
 							if (1)
@@ -624,6 +707,25 @@ void CInputFileSource::DecoderVideo()
 							frame->AllocMem(pixels_buffer_size);
 							frame->m_eFrameType = eVideoFrame;
 							frame->m_ePixType = eYUV420P;
+							frame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
+							frame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
+							frame->color_range = AVCOL_RANGE_MPEG;
+							frame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
+							frame->hasDisplayMetadata = false;
+							frame->hasLightMetadata = false;
+							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+							if (sd)
+							{
+								frame->displayMetadata = *(AVMasteringDisplayMetadata *)sd->data;
+								frame->hasDisplayMetadata = true;
+							}
+
+							sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+							if (sd)
+							{
+								frame->lightMetadata = *(AVContentLightMetadata *)sd->data;
+								frame->hasLightMetadata = true;
+							}
 							ConverToYUV420P(m_pstDecodedVideoBuffer, frame->GetDataPtr(), width, height);
 							m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
 							long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //ÞD»¯³Éms
@@ -659,6 +761,7 @@ void CInputFileSource::SyncVideoSyncVideo()
 		if (m_bStartSupportData == false)
 		{
 			m_bStartSupportData = true;
+			m_bPlayVideo = true;
 		}
 	}
 	if (!m_bPlay || m_bSeek || m_bPlayVideo == false || false == m_bStartSupportData)
@@ -1116,7 +1219,7 @@ int CInputFileSource::Open()
 			m_nFrameRate = 25;
 		}
 
-		
+		SS_LOG(LOG_WARNING, " width is:%d, height is:%d, fps is:%d",  m_pstVideoCodecCtx->width, m_pstVideoCodecCtx->height, m_nFrameRate);
 
 		m_nWidth = m_pstVideoCodecCtx->width;
 		m_nHeight = m_pstVideoCodecCtx->height;
@@ -1166,13 +1269,16 @@ int CInputFileSource::Open()
 			m_bPlayVideo = true;
 		}
 	}
-
-
+	if (false)
+	{
+		m_eSyncType = SYNC_SYSTEM;
+		m_bPlayVideo = true;
+	}
 
 	return 0;
 
 label_error:
-
+	SS_LOG(LOG_WARNING, "open  error.");
 	if (m_pstFmtCtx != NULL)
 	{
 		avformat_close_input(&m_pstFmtCtx);
@@ -1203,7 +1309,7 @@ int CInputFileSource::ResampleAudio(AVFrame* frame, unsigned char* out_buffer, i
 	{
 		if (m_nOrgAudioChannelLayOut >= 0)
 		{
-			
+			SS_LOG(LOG_WARNING, "Audio decoder error .the org lay out is:%d, new layout is :%d", m_nOrgAudioChannelLayOut, nLayOut);
 
 		}
 		if (m_pstSwrContext)
@@ -1372,7 +1478,8 @@ int CInputFileSource::SetSourceSeek(double dbRatio)
 	}
 	long long timestamp = m_pstFmtCtx->duration;
 	timestamp *= dbRatio;
-	
+	SS_LOG(LOG_WARNING, "setFileSeek timestamp : %lld , druation is:%lld", timestamp, m_pstFmtCtx->duration);
+
 	AVRational ra;
 	ra.num = 1;
 	ra.den = AV_TIME_BASE;
@@ -1426,7 +1533,7 @@ int CInputFileSource::SetSourceSeek(double dbRatio)
 	}
 	else
 	{
-	
+		SS_LOG(LOG_WARNING, "avformat_seek_file %s error.", m_strPath.toLocal8Bit().toStdString().c_str());
 	}
 	m_dbVideoLastTime = 0;
 	m_dbAudioLastTime = 0;

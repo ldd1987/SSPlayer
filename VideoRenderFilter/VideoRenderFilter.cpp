@@ -1,7 +1,8 @@
 #include "VideoRenderFilter.h"
 #include "../Common/MediaTimer.h"
 #include "../Common/utils.h"
-
+#include "../Common/Helpers.h"
+#include "ConversionMatrix.h"
 struct VertexType
 {
 	XMFLOAT3 position;
@@ -13,35 +14,398 @@ struct MatrixBufferType
 	XMMATRIX view;
 	XMMATRIX projection;
 };
-
-std::string getExecutableDir()
+#define DEFAULT_BRIGHTNESS         100
+#define DEFAULT_SRGB_BRIGHTNESS    100
+#define MAX_HLG_BRIGHTNESS        1000
+#define MAX_PQ_BRIGHTNESS        10000
+dxgi_color_space color_spaces[]=
 {
-	char path[512] = "";
+	{DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709,"DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_GAMMA22, AVCOL_SPC_BT709,true},
+	{DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709,"DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_LINEAR, AVCOL_SPC_BT709,true},
+	{DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P709,"DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_GAMMA22, AVCOL_SPC_BT709,false},
+	{DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P2020,"DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P2020",COLOR_AXIS_RGB,AVCOL_PRI_BT2020,AVCOL_TRC_GAMMA22, AVCOL_SPC_BT2020_NCL,false},
+	{DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,"DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020",COLOR_AXIS_RGB,AVCOL_PRI_BT2020,AVCOL_TRC_SMPTE2084, AVCOL_SPC_BT2020_NCL,true},
+	{DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020,"DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020",COLOR_AXIS_RGB,AVCOL_PRI_BT2020,AVCOL_TRC_SMPTE2084, AVCOL_SPC_BT2020_NCL,false},
+	{DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020,"DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020",COLOR_AXIS_RGB,AVCOL_PRI_BT2020,AVCOL_TRC_GAMMA22, AVCOL_SPC_BT2020_NCL,true},
+	{DXGI_COLOR_SPACE_RGB_STUDIO_G24_NONE_P709,"DXGI_COLOR_SPACE_RGB_STUDIO_G24_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_BT709, AVCOL_SPC_BT709,false},
+	{DXGI_COLOR_SPACE_RGB_STUDIO_G24_NONE_P2020,"DXGI_COLOR_SPACE_RGB_STUDIO_G24_NONE_P2020",COLOR_AXIS_RGB,AVCOL_PRI_BT2020,AVCOL_TRC_BT709, AVCOL_SPC_BT2020_NCL,false},
+};
+struct ConvYCbCr
+{
+	float Kr, Kb;
+};
 
-#ifdef _WIN32
 
-	GetModuleFileNameA(NULL, path, sizeof(path));
+const ConvYCbCr BT709YCbCr = { 0.2126, 0.0722 };
+const ConvYCbCr BT601YCbCr = { 0.299, 0.114 };
+const ConvYCbCr BT2020YCbCr = { 0.2627, 0.0593 };
+const ConvYCbCr ST240YCbCr = { 0.212, 0.087 };
 
-#else
+const Primaries PrimariesBT709 = { {{0.640, 0.330}, {0.300, 0.600}, {0.150, 0.060}},
+  {0.3127, 0.3290} };
+const Primaries PrimariesBT610_525 = { {{0.640, 0.340}, {0.310, 0.595}, {0.155, 0.070}},
+  {0.3127, 0.3290} };
+const Primaries PrimariesBT610_625 = { {{0.640, 0.330}, {0.290, 0.600}, {0.150, 0.060}},
+  {0.3127, 0.3290} };
+const Primaries PrimariesBT2020 = { {{0.708, 0.292}, {0.170, 0.797}, {0.131, 0.046}},
+  {0.3127, 0.3290} };
 
-	ssize_t count = readlink("/proc/self/exe", path, sizeof(path));
-	if (count <= 0)
-	{
-		return "";
-	}
-
-#endif
-	std::string strpath = path;
-	std::string::size_type pos = std::string(strpath).find_last_of("\\/");
-	strpath = std::string(strpath).substr(0, pos);
-	return strpath;
-}
 
 VideoRenderFilter::~VideoRenderFilter()
 {
 	Shutdown();
 }
 
+float GetFormatLuminance(AVColorTransferCharacteristic srctranfunc)
+{
+	switch (srctranfunc)
+	{
+	case AVCOL_TRC_SMPTE2084:
+		return MAX_PQ_BRIGHTNESS;
+	case AVCOL_TRC_ARIB_STD_B67:
+		return MAX_HLG_BRIGHTNESS;
+	default:
+		return DEFAULT_BRIGHTNESS;
+	}
+}
+
+struct xy_primary {
+	double x, y;
+};
+
+struct cie1931_primaries {
+	int primary;
+	struct xy_primary red, green, blue, white;
+};
+
+static const struct cie1931_primaries STANDARD_PRIMARIES[] = {
+#define CIE_D65 {0.31271, 0.32902}
+#define CIE_C   {0.31006, 0.31616}
+	 {AVCOL_PRI_SMPTE170M,{0.630, 0.340},{0.310, 0.595}, {0.155, 0.070},CIE_D65},
+	{AVCOL_PRI_BT470BG, {0.640, 0.330},{0.290, 0.600}, {0.150, 0.060}, CIE_D65},
+	 {AVCOL_PRI_BT709, {0.640, 0.330}, {0.300, 0.600},{0.150, 0.060}, CIE_D65},
+	 {AVCOL_PRI_BT2020, {0.708, 0.292}, {0.170, 0.797},{0.131, 0.046}, CIE_D65},
+	{AVCOL_PRI_SMPTE431, {0.680, 0.320}, {0.265, 0.690},{0.150, 0.060}, CIE_D65},
+#undef CIE_D65
+#undef CIE_C
+};
+
+static void Float3x3Inverse(double in_out[3 * 3])
+{
+	double m00 = in_out[0 + 0 * 3], m01 = in_out[1 + 0 * 3], m02 = in_out[2 + 0 * 3],
+		m10 = in_out[0 + 1 * 3], m11 = in_out[1 + 1 * 3], m12 = in_out[2 + 1 * 3],
+		m20 = in_out[0 + 2 * 3], m21 = in_out[1 + 2 * 3], m22 = in_out[2 + 2 * 3];
+
+	// calculate the adjoint
+	in_out[0 + 0 * 3] = (m11 * m22 - m21 * m12);
+	in_out[1 + 0 * 3] = -(m01 * m22 - m21 * m02);
+	in_out[2 + 0 * 3] = (m01 * m12 - m11 * m02);
+	in_out[0 + 1 * 3] = -(m10 * m22 - m20 * m12);
+	in_out[1 + 1 * 3] = (m00 * m22 - m20 * m02);
+	in_out[2 + 1 * 3] = -(m00 * m12 - m10 * m02);
+	in_out[0 + 2 * 3] = (m10 * m21 - m20 * m11);
+	in_out[1 + 2 * 3] = -(m00 * m21 - m20 * m01);
+	in_out[2 + 2 * 3] = (m00 * m11 - m10 * m01);
+
+	// calculate the determinant (as inverse == 1/det * adjoint,
+	// adjoint * m == identity * det, so this calculates the det)
+	double det = m00 * in_out[0 + 0 * 3] + m10 * in_out[1 + 0 * 3] + m20 * in_out[2 + 0 * 3];
+	det = 1.0f / det;
+
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 3; j++)
+			in_out[j + i * 3] *= det;
+	}
+}
+
+static void Float3x3Multiply(double m1[3 * 3], const double m2[3 * 3])
+{
+	double a00 = m1[0 + 0 * 3], a01 = m1[1 + 0 * 3], a02 = m1[2 + 0 * 3],
+		a10 = m1[0 + 1 * 3], a11 = m1[1 + 1 * 3], a12 = m1[2 + 1 * 3],
+		a20 = m1[0 + 2 * 3], a21 = m1[1 + 2 * 3], a22 = m1[2 + 2 * 3];
+
+	for (int i = 0; i < 3; i++) {
+		m1[i + 0 * 3] = a00 * m2[i + 0 * 3] + a01 * m2[i + 1 * 3] + a02 * m2[i + 2 * 3];
+		m1[i + 1 * 3] = a10 * m2[i + 0 * 3] + a11 * m2[i + 1 * 3] + a12 * m2[i + 2 * 3];
+		m1[i + 2 * 3] = a20 * m2[i + 0 * 3] + a21 * m2[i + 1 * 3] + a22 * m2[i + 2 * 3];
+	}
+}
+
+static void Float3Multiply(const double in[3], const double mult[3 * 3], double out[3])
+{
+	for (size_t i = 0; i < 3; i++)
+	{
+		out[i] = mult[i + 0 * 3] * in[0] +
+			mult[i + 1 * 3] * in[1] +
+			mult[i + 2 * 3] * in[2];
+	}
+}
+
+/* from http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html */
+static void GetRGB2XYZMatrix(const struct cie1931_primaries *primaries,
+	double out[3 * 3])
+{
+#define RED   0
+#define GREEN 1
+#define BLUE  2
+	double X[3], Y[3], Z[3], S[3], W[3];
+	double W_TO_S[3 * 3];
+
+	X[RED] = primaries->red.x / primaries->red.y;
+	X[GREEN] = 1;
+	X[BLUE] = (1 - primaries->red.x - primaries->red.y) / primaries->red.y;
+
+	Y[RED] = primaries->green.x / primaries->green.y;
+	Y[GREEN] = 1;
+	Y[BLUE] = (1 - primaries->green.x - primaries->green.y) / primaries->green.y;
+
+	Z[RED] = primaries->blue.x / primaries->blue.y;
+	Z[GREEN] = 1;
+	Z[BLUE] = (1 - primaries->blue.x - primaries->blue.y) / primaries->blue.y;
+
+	W_TO_S[0 + 0 * 3] = X[RED];
+	W_TO_S[1 + 0 * 3] = X[GREEN];
+	W_TO_S[2 + 0 * 3] = X[BLUE];
+	W_TO_S[0 + 1 * 3] = Y[RED];
+	W_TO_S[1 + 1 * 3] = Y[GREEN];
+	W_TO_S[2 + 1 * 3] = Y[BLUE];
+	W_TO_S[0 + 2 * 3] = Z[RED];
+	W_TO_S[1 + 2 * 3] = Z[GREEN];
+	W_TO_S[2 + 2 * 3] = Z[BLUE];
+
+	Float3x3Inverse(W_TO_S);
+
+	W[0] = primaries->white.x / primaries->white.y; /* Xw */
+	W[1] = 1;                  /* Yw */
+	W[2] = (1 - primaries->white.x - primaries->white.y) / primaries->white.y; /* Yw */
+
+	Float3Multiply(W, W_TO_S, S);
+
+	out[0 + 0 * 3] = S[RED] * X[RED];
+	out[1 + 0 * 3] = S[GREEN] * Y[RED];
+	out[2 + 0 * 3] = S[BLUE] * Z[RED];
+	out[0 + 1 * 3] = S[RED] * X[GREEN];
+	out[1 + 1 * 3] = S[GREEN] * Y[GREEN];
+	out[2 + 1 * 3] = S[BLUE] * Z[GREEN];
+	out[0 + 2 * 3] = S[RED] * X[BLUE];
+	out[1 + 2 * 3] = S[GREEN] * Y[BLUE];
+	out[2 + 2 * 3] = S[BLUE] * Z[BLUE];
+#undef RED
+#undef GREEN
+#undef BLUE
+}
+
+/* from http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html */
+static void GetXYZ2RGBMatrix(const struct cie1931_primaries *primaries,
+	double out[3 * 3])
+{
+	GetRGB2XYZMatrix(primaries, out);
+	Float3x3Inverse(out);
+}
+static void ChromaticAdaptation(const struct xy_primary *src_white,
+	const struct xy_primary *dst_white,
+	double in_out[3 * 3])
+{
+	if (fabs(src_white->x - dst_white->x) < 1e-6 &&
+		fabs(src_white->y - dst_white->y) < 1e-6)
+		return;
+
+	/* TODO, see http://www.brucelindbloom.com/index.html?Eqn_ChromAdapt.html */
+}
+
+
+void GetPrimariesTransform(FLOAT Primaries[4 * 4], AVColorPrimaries src1, AVColorPrimaries dst1)
+{
+	int src = 0;
+	int dst = 0;
+	for (int i = 0; i < sizeof(STANDARD_PRIMARIES) / sizeof(STANDARD_PRIMARIES[0]); i++)
+	{
+		if (STANDARD_PRIMARIES[i].primary == src1)
+		{
+			src = i;
+		}
+		if (STANDARD_PRIMARIES[i].primary == dst1)
+		{
+			dst = i;
+		}
+	}
+	const struct cie1931_primaries *p_src = &STANDARD_PRIMARIES[src];
+	const struct cie1931_primaries *p_dst = &STANDARD_PRIMARIES[dst];
+	double rgb2xyz[3 * 3], xyz2rgb[3 * 3];
+
+	/* src[RGB] -> src[XYZ] */
+	GetRGB2XYZMatrix(p_src, rgb2xyz);
+
+	/* src[XYZ] -> dst[XYZ] */
+	ChromaticAdaptation(&p_src->white, &p_dst->white, rgb2xyz);
+
+	/* dst[XYZ] -> dst[RGB] */
+	GetXYZ2RGBMatrix(p_dst, xyz2rgb);
+
+	/* src[RGB] -> src[XYZ] -> dst[XYZ] -> dst[RGB] */
+	Float3x3Multiply(xyz2rgb, rgb2xyz);
+
+	for (size_t i = 0; i < 3; ++i)
+	{
+		for (size_t j = 0; j < 3; ++j)
+			Primaries[j + i * 4] = xyz2rgb[j + i * 3];
+		Primaries[3 + i * 4] = 0;
+	}
+	for (size_t j = 0; j < 4; ++j)
+		Primaries[j + 3 * 4] = j == 3;
+}
+
+bool IsRGB(CFrameSharePtr &stFrame)
+{
+	bool bRet = true;
+	if (stFrame->m_ePixType == eBGRA)
+	{
+
+	}
+	else if (stFrame->m_ePixType == eRGBA)
+	{
+
+	}
+	else if (stFrame->m_ePixType == eBGR)
+	{
+
+	}
+	else
+	{
+		bRet = false;
+	}
+	return bRet;
+	
+}
+
+void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries dst, AVColorTransferCharacteristic srctranfunc, CFrameSharePtr &stFrame)
+{
+	m_colPrimariesDst = dst;
+	m_colPrimariesSrc = src;
+
+	if (m_colPrimariesDst != m_colPrimariesSrc)
+	{
+		FLOAT Primaries[4 * 4] = { 0 };
+		GetPrimariesTransform(Primaries, m_colPrimariesSrc, m_colPrimariesDst);
+		for (int i = 0; i < 16; i++)
+		{
+			m_pixtransform.Primaries[i] = Primaries[i];
+		}
+		
+	}
+	bool bRGB = IsRGB(stFrame);
+	{
+		FLOAT itu_black_level = 0.f;
+		FLOAT itu_achromacy = 0.f;
+		if (!bRGB)
+		{
+			switch (stFrame->m_nPixBits)
+			{
+			case 8:
+				/* Rec. ITU-R BT.709-6 ¡ì4.6 */
+				itu_black_level = 16.f / 255.f;
+				itu_achromacy = 128.f / 255.f;
+				break;
+			case 10:
+				/* Rec. ITU-R BT.709-6 ¡ì4.6 */
+				itu_black_level = 64.f / 1023.f;
+				itu_achromacy = 512.f / 1023.f;
+				break;
+			case 12:
+				/* Rec. ITU-R BT.2020-2 Table 5 */
+				itu_black_level = 256.f / 4095.f;
+				itu_achromacy = 2048.f / 4095.f;
+				break;
+			default:
+				/* unknown bitdepth, use approximation for infinite bit depth */
+				itu_black_level = 16.f / 256.f;
+				itu_achromacy = 128.f / 256.f;
+				break;
+			}
+		}
+
+		static const FLOAT IDENTITY_4X4[4 * 4] = {
+			1.f, 0.f, 0.f, 0.f,
+			0.f, 1.f, 0.f, 0.f,
+			0.f, 0.f, 1.f, 0.f,
+			0.f, 0.f, 0.f, 1.f,
+		};
+
+		/* matrices for studio range */
+		/* see https://en.wikipedia.org/wiki/YCbCr#ITU-R_BT.601_conversion, in studio range */
+		static const FLOAT COLORSPACE_BT601_YUV_TO_FULL_RGBA[4 * 4] = {
+			1.164383561643836f,                 0.f,  1.596026785714286f, 0.f,
+			1.164383561643836f, -0.391762290094914f, -0.812967647237771f, 0.f,
+			1.164383561643836f,  2.017232142857142f,                 0.f, 0.f,
+						   0.f,                 0.f,                 0.f, 1.f,
+		};
+		/* see https://en.wikipedia.org/wiki/YCbCr#ITU-R_BT.709_conversion, in studio range */
+		static const FLOAT COLORSPACE_BT709_YUV_TO_FULL_RGBA[4 * 4] = {
+			1.164383561643836f,                 0.f,  1.792741071428571f, 0.f,
+			1.164383561643836f, -0.213248614273730f, -0.532909328559444f, 0.f,
+			1.164383561643836f,  2.112401785714286f,                 0.f, 0.f,
+						   0.f,                 0.f,                 0.f, 1.f,
+		};
+		/* see https://en.wikipedia.org/wiki/YCbCr#ITU-R_BT.2020_conversion, in studio range */
+		static const FLOAT COLORSPACE_BT2020_YUV_TO_FULL_RGBA[4 * 4] = {
+			1.164383561643836f,  0.000000000000f,  1.678674107143f, 0.f,
+			1.164383561643836f, -0.127007098661f, -0.440987687946f, 0.f,
+			1.164383561643836f,  2.141772321429f,  0.000000000000f, 0.f,
+						   0.f,              0.f,              0.f, 1.f,
+		};
+
+		//PS_COLOR_TRANSFORM colorspace;
+
+		memcpy(m_pixtransform.WhitePoint, IDENTITY_4X4, sizeof(m_pixtransform.WhitePoint));
+
+		const FLOAT *ppColorspace;
+		if (bRGB)
+			ppColorspace = IDENTITY_4X4;
+		else 
+		{
+			switch (stFrame->color_primaries)
+			{
+			case AVCOL_PRI_BT709:
+				ppColorspace = COLORSPACE_BT709_YUV_TO_FULL_RGBA;
+				break;
+			case AVCOL_PRI_BT2020:
+				ppColorspace = COLORSPACE_BT2020_YUV_TO_FULL_RGBA;
+				break;
+			case AVCOL_PRI_BT470BG:
+				ppColorspace = COLORSPACE_BT601_YUV_TO_FULL_RGBA;
+				break;
+			default:
+				if (stFrame->m_nHeight > 576)
+					ppColorspace = COLORSPACE_BT709_YUV_TO_FULL_RGBA;
+				else
+					ppColorspace = COLORSPACE_BT601_YUV_TO_FULL_RGBA;
+				break;
+			}
+			/* all matrices work in studio range and output in full range */
+			m_pixtransform.WhitePoint[0 * 4 + 3] = -itu_black_level;
+			m_pixtransform.WhitePoint[1 * 4 + 3] = -itu_achromacy;
+			m_pixtransform.WhitePoint[2 * 4 + 3] = -itu_achromacy;
+		}
+		for (int i = 0; i < 16; i++)
+		{
+			m_pixtransform.Colorspace[i] = ppColorspace[i];
+		}
+	}
+
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	HRESULT hr = m_deviceContext->Map((ID3D11Resource *)m_pixtranformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	if (FAILED(hr))
+	{
+		return;
+	}
+	PS_COLOR_TRANSFORM *dst_data = (PS_COLOR_TRANSFORM *)mappedResource.pData;
+	*dst_data = m_pixtransform;
+	m_deviceContext->Unmap((ID3D11Resource *)m_pixtranformBuffer, 0);
+	m_pTransPrimariesInfo->SetConstantBuffer(m_pixtranformBuffer);
+
+	float scale = m_displayInfo.luminance_peak / GetFormatLuminance(srctranfunc);
+	m_pLuminanceScale->SetFloat(scale);
+}
 VideoRenderFilter::VideoRenderFilter(QWidget*  parent, std::string &strName) : CSSFilter(strName)
 {
 	m_alphaEnableBlendingState = NULL;
@@ -70,9 +434,22 @@ VideoRenderFilter::VideoRenderFilter(QWidget*  parent, std::string &strName) : C
 	m_nLastWidth = 0;
 	m_nLastHeight = 0;
 	m_RenderPixelFormat = eUnknowPix;
-	m_pWidget = parent;
-	m_nTextureWidth = m_pWidget->width();
-	m_nTextureHeight = m_pWidget->height();
+	if (1)
+	{
+		m_pWidget = parent;
+		m_nTextureWidth = m_pWidget->width();
+		m_nTextureHeight = m_pWidget->height();
+	
+	}
+	else
+	{
+		m_pWidget = new QWidget();
+		m_nTextureWidth = 1920;
+		m_nTextureHeight = 1080;
+		m_pWidget->setFixedSize(m_nTextureWidth, m_nTextureHeight);
+		m_pWidget->show();
+	}
+
 	m_bRendUpdate = true;
 	int nWidth = m_pWidget->width();
 	int nHeight = m_pWidget->height();
@@ -96,7 +473,7 @@ int VideoRenderFilter::InputData(CFrameSharePtr &frame)
 	return 0;
 }
 
-void VideoRenderFilter::RenderToWindow()
+void VideoRenderFilter::RenderToWindow(bool bDirect)
 {
 	XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
 	// renderto  backbuffer
@@ -128,11 +505,23 @@ void VideoRenderFilter::RenderToWindow()
 	viewwindows.m[3][2] = 0.0f;
 	viewwindows.m[3][3] = 1.0f;
 	viewMatrix = XMLoadFloat4x4(&viewwindows);
-	//	m_pWorldMatVar->SetMatrix(reinterpret_cast<const float*>(&worldMatrix));
 	m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-	//	m_pProjMatVar->SetMatrix((reinterpret_cast<const float*>(&orthoMatrix)));
+	if (bDirect)
+	{
+
+	}
+	else
+	{
+
+	}
 	m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_textureText);
 	m_pType->SetInt(1);
+	m_ptransfer->SetInt(m_displayInfo.dxgicolor.transfer);
+	m_pdistransfer->SetInt(m_displayInfo.dxgicolor.transfer);
+	m_pprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
+	m_pdisprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
+	m_pfullrange->SetInt(1);
+	m_psrcrange->SetInt(1);
 	m_deviceContext->IASetInputLayout(m_layout);
 	D3DX11_TECHNIQUE_DESC techDescwindow;
 	m_pTech->GetDesc(&techDescwindow);
@@ -171,7 +560,7 @@ void VideoRenderFilter::UpdateBackBuffer()
 			m_renderTargetView->Release();
 			m_renderTargetView = NULL;
 		}
-		HRESULT result = m_swapChain->ResizeBuffers(0, m_nTextureWidth, m_nTextureHeight, DXGI_FORMAT_B8G8R8A8_UNORM, 0);
+		HRESULT result = m_swapChain->ResizeBuffers(0, m_nTextureWidth, m_nTextureHeight, DXGI_FORMAT_R8G8B8A8_UNORM, 0);
 		// Get the pointer to the back buffer.
 		result = m_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBufferPtr);
 		if (FAILED(result))
@@ -223,10 +612,6 @@ bool VideoRenderFilter::ReadData()
 	}
 	else
 	{
-		if (!m_bRendUpdate)
-		{
-			RenderToWindow();
-		}
 		return bRet;
 	}
 
@@ -276,8 +661,37 @@ bool VideoRenderFilter::ReadData()
 	{
 		nType = 2;
 	}
+
+	int transfer = m_displayInfo.transfer;
+	if (stFrame->color_trc == AVCOL_TRC_BT709)
+	{
+		transfer = AVCOL_TRC_BT709;
+	}
+	else if (stFrame->color_trc == AVCOL_TRC_SMPTEST2084) // HDR10
+	{
+		transfer = AVCOL_TRC_SMPTEST2084;
+	}
+	else if (stFrame->color_trc == AVCOL_TRC_ARIB_STD_B67) // HLG
+	{
+		transfer = AVCOL_TRC_ARIB_STD_B67;
+	}
+	int distransfer = m_displayInfo.dxgicolor.transfer;
+	int primaries = m_displayInfo.primaries;
+	if (stFrame->color_primaries == AVCOL_PRI_BT709)
+	{
+		primaries = AVCOL_PRI_BT709;
+	}
+	else if (stFrame->color_primaries == AVCOL_PRI_BT2020)
+	{
+		primaries = AVCOL_PRI_BT2020;
+	}
+	SetSwapchainSetMetadata(stFrame);
+	int disprimaries = m_displayInfo.dxgicolor.primaries;
+	int fullrange = 1;
+	int srcrange = 1;
+
 	XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-	bool bRendToTexture = true;
+	bool bRendToTexture = false;
 	// render to texture
 	if (bRendToTexture)
 	{
@@ -307,7 +721,7 @@ bool VideoRenderFilter::ReadData()
 		viewMatrix = XMLoadFloat4x4(&view);
 		//	m_pWorldMatVar->SetMatrix(reinterpret_cast<const float*>(&worldMatrix));
 		m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-		//	m_pProjMatVar->SetMatrix((reinterpret_cast<const float*>(&orthoMatrix)));
+		SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries,stFrame->color_trc,stFrame);
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
 		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
 		m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
@@ -315,6 +729,12 @@ bool VideoRenderFilter::ReadData()
 		m_pType->SetInt(nType);
 		m_pSourceHeight->SetInt(stFrame->m_nHeight);
 		m_pSourceWidth->SetInt(stFrame->m_nWidth);
+		m_ptransfer->SetInt(transfer);
+		m_pdistransfer->SetInt(distransfer);
+		m_pprimaries->SetInt(primaries);
+		m_pdisprimaries->SetInt(disprimaries);
+		m_pfullrange->SetInt(fullrange);
+		m_psrcrange->SetInt(srcrange);
 		m_deviceContext->IASetInputLayout(m_layout);
 		D3DX11_TECHNIQUE_DESC techDesc;
 		m_pTech->GetDesc(&techDesc);
@@ -327,7 +747,75 @@ bool VideoRenderFilter::ReadData()
 	}
 	ID3D11ShaderResourceView *const pSRV[1] = { NULL };
 	m_deviceContext->PSSetShaderResources(0, 1, pSRV);
-	RenderToWindow();
+	//XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
+	// renderto  backbuffer
+	if (m_bRendUpdate)
+	{
+		m_pWidget->setAttribute(Qt::WA_OpaquePaintEvent);
+		m_pWidget->setUpdatesEnabled(false);
+		m_bRendUpdate = false;
+	}
+	m_deviceContext->OMSetRenderTargets(1, &m_renderTargetView, NULL);
+	m_deviceContext->RSSetViewports(1, &viewport);
+	BeginScene(0.0f, 0.0f, 0.0f, 1.0f, m_renderTargetView, NULL);
+	RenderBuffers(m_vertexBuffer);
+	XMFLOAT4X4 viewwindows;
+	viewwindows.m[0][0] = 2.0f / m_nTextureWidth;
+	viewwindows.m[0][1] = 0.0f;
+	viewwindows.m[0][2] = 0.0f;
+	viewwindows.m[0][3] = 0.0f;
+	viewwindows.m[1][0] = 0.0f;
+	viewwindows.m[1][1] = -2.0f / m_nTextureHeight;
+	viewwindows.m[1][2] = 0.0f;
+	viewwindows.m[1][3] = 0.0f;
+	viewwindows.m[2][0] = 0.0f;
+	viewwindows.m[2][1] = 0.0f;
+	viewwindows.m[2][2] = 1.0f;
+	viewwindows.m[2][3] = 0.0f;
+	viewwindows.m[3][0] = -1.0f;
+	viewwindows.m[3][1] = 1.0f;
+	viewwindows.m[3][2] = 0.0f;
+	viewwindows.m[3][3] = 1.0f;
+	viewMatrix = XMLoadFloat4x4(&viewwindows);
+	m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
+	if (false == bRendToTexture)
+	{
+		SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, stFrame);
+		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
+		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
+		m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
+		m_pTextSourceA->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[3]);
+		m_pType->SetInt(nType);
+		m_pSourceHeight->SetInt(stFrame->m_nHeight);
+		m_pSourceWidth->SetInt(stFrame->m_nWidth);
+		m_ptransfer->SetInt(transfer);
+		m_pdistransfer->SetInt(distransfer);
+		m_pprimaries->SetInt(primaries);
+		m_pdisprimaries->SetInt(disprimaries);
+		m_pfullrange->SetInt(fullrange);
+		m_psrcrange->SetInt(srcrange);
+	}
+	else
+	{
+		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_textureText);
+		m_pType->SetInt(1);
+		m_ptransfer->SetInt(m_displayInfo.dxgicolor.transfer);
+		m_pdistransfer->SetInt(m_displayInfo.dxgicolor.transfer);
+		m_pprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
+		m_pdisprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
+		m_pfullrange->SetInt(1);
+		m_psrcrange->SetInt(1);
+	}
+	
+	m_deviceContext->IASetInputLayout(m_layout);
+	D3DX11_TECHNIQUE_DESC techDescwindow;
+	m_pTech->GetDesc(&techDescwindow);
+	for (UINT i = 0; i < techDescwindow.Passes; ++i)
+	{
+		m_pTech->GetPassByIndex(i)->Apply(0, m_deviceContext);
+		m_deviceContext->DrawIndexed(m_indexCount, 0, 0);
+	}
+	EndScene();
 	m_deviceContext->PSSetShaderResources(0, 1, pSRV);
 	return bRet;
 }
@@ -650,14 +1138,219 @@ IDXGIAdapter *VideoRenderFilter::D3D11DeviceAdapter(ID3D11Device *d3ddev)
 	return p_adapter;
 }
 
+#define FROM_AVRAT(default_factor, avrat) \
+(uint64_t)(default_factor) * (avrat).num / (avrat).den
+
+#define LAV_RED    0
+#define LAV_GREEN  1
+#define LAV_BLUE   2
+#define ST2086_PRIM_FACTOR 50000
+#define ST2086_LUMA_FACTOR 10000
+bool isEqueHDR(DXGI_HDR_METADATA_HDR10 src, DXGI_HDR_METADATA_HDR10 dst)
+{
+	bool bRet = false;
+	do
+	{
+		if (src.MaxContentLightLevel != dst.MaxContentLightLevel)
+		{
+			break;
+		}
+		if (src.MaxFrameAverageLightLevel != dst.MaxFrameAverageLightLevel)
+		{
+			break;
+		}
+		if (src.GreenPrimary[0] != dst.GreenPrimary[0])
+		{
+			break;
+		}
+		if (src.GreenPrimary[1] != dst.GreenPrimary[1])
+		{
+			break;
+		}
+
+		if (src.BluePrimary[0] != dst.BluePrimary[0])
+		{
+			break;
+		}
+		if (src.BluePrimary[1] != dst.BluePrimary[1])
+		{
+			break;
+		}
+		if (src.RedPrimary[0] != dst.RedPrimary[0])
+		{
+			break;
+		}
+		if (src.RedPrimary[1] != dst.RedPrimary[1])
+		{
+			break;
+		}
+		if (src.WhitePoint[0] != dst.WhitePoint[0])
+		{
+			break;
+		}
+		if (src.WhitePoint[1] != dst.WhitePoint[1])
+		{
+			break;
+		}
+
+		if (src.MinMasteringLuminance != dst.MinMasteringLuminance)
+		{
+			break;
+		}
+		if (src.MaxMasteringLuminance != dst.MaxMasteringLuminance)
+		{
+			break;
+		}
+		bRet = true;
+
+	} while (0);
+	return bRet;
+}
+void VideoRenderFilter::SetSwapchainSetMetadata(CFrameSharePtr &stFrame)
+{
+
+	if (stFrame->hasDisplayMetadata && m_displayInfo.sendmetadata && m_swapChain4)
+	{
+		DXGI_HDR_METADATA_HDR10  hdr10 = { 0 };
+		 if (stFrame->hasLightMetadata)
+		 {
+			 hdr10.MaxContentLightLevel = stFrame->lightMetadata.MaxCLL;
+			 hdr10.MaxFrameAverageLightLevel = stFrame->lightMetadata.MaxFALL;
+		 }
+		 if (stFrame->hasDisplayMetadata)
+		 {
+			 hdr10.GreenPrimary[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_GREEN][0]);
+			 hdr10.GreenPrimary[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_GREEN][1]);
+			 hdr10.BluePrimary[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_BLUE][0]);
+			 hdr10.BluePrimary[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_BLUE][1]);
+			 hdr10.RedPrimary[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_RED][0]);
+			 hdr10.RedPrimary[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_RED][1]);
+			 hdr10.WhitePoint[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.white_point[0]);
+			 hdr10.WhitePoint[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.white_point[1]);
+			 hdr10.MinMasteringLuminance = FROM_AVRAT(ST2086_LUMA_FACTOR, stFrame->displayMetadata.min_luminance);;
+			 hdr10.MaxMasteringLuminance = FROM_AVRAT(ST2086_LUMA_FACTOR, stFrame->displayMetadata.max_luminance);;
+		 }
+		 if (true || false == isEqueHDR(hdr10, m_hdr10))
+		 {
+			 m_swapChain4->SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, sizeof(&hdr10), &hdr10);
+			 m_hdr10 = hdr10;
+		 }
+
+		
+	}
+}
+
+bool canHandleConversion(const dxgi_color_space *src, const dxgi_color_space *dst)
+{
+	if (src == dst)
+		return true;
+	if (src->primaries == AVCOL_PRI_BT2020)
+		return true; /* we can convert BT2020 to 2020 or 709 */
+	if (dst->transfer == AVCOL_PRI_BT709)
+		return true; /* we can handle anything to 709 */
+	return false; /* let Windows do the rest */
+}
+
+
+void VideoRenderFilter::SelectSwapchainColorspace()
+{
+	HRESULT hr;
+	int best = 0;
+	int score, best_score = 0;
+	UINT support;
+	IDXGISwapChain4 *dxgiswapChain4 = NULL;
+	hr = m_swapChain->QueryInterface(IID_IDXGISwapChain4, (void **)&dxgiswapChain4);
+	if (FAILED(hr)) 
+	{
+		goto done;
+	}
+	best = -1;
+	for (int i = 0; color_spaces[i].name; ++i)
+	{
+		hr = dxgiswapChain4->CheckColorSpaceSupport( color_spaces[i].dxgi, &support);
+		if (SUCCEEDED(hr) && support) 
+		{
+			score = 0;
+			if (color_spaces[i].primaries == m_displayInfo.primaries)
+				score++;
+			if (color_spaces[i].color == m_displayInfo.colorspace)
+				score += 2; /* we don't want to translate color spaces */
+			if (color_spaces[i].transfer == m_displayInfo.transfer)
+				score++;
+			if (color_spaces[i].b_full_range == m_displayInfo.full_range)
+				score++;
+			if (score > best_score || (score && best == -1))
+			{
+				best = i;
+				best_score = score;
+			}
+		}
+	}
+	IDXGIOutput *dxgiOutput = NULL;
+	if (SUCCEEDED(m_swapChain->GetContainingOutput( &dxgiOutput)))
+	{
+		IDXGIOutput6 *dxgiOutput6 = NULL;
+		if (SUCCEEDED(dxgiOutput->QueryInterface((IID_IDXGIOutput6), (void **)&dxgiOutput6)))
+		{
+			DXGI_OUTPUT_DESC1 desc1;
+			if (SUCCEEDED(dxgiOutput6->GetDesc1( &desc1)))
+			{
+				const dxgi_color_space *csp = NULL;
+				for (int i = 0; color_spaces[i].name; ++i)
+				{
+					if (color_spaces[i].dxgi == desc1.ColorSpace)
+					{
+						if (!canHandleConversion(&color_spaces[best], &color_spaces[i]))
+						{
+
+						}
+						else
+						{
+							best = i;
+							csp = &color_spaces[i];
+						}
+						break;
+					}
+				}
+			}
+			dxgiOutput6->Release();
+		}
+		dxgiOutput->Release();
+	}
+	if (best == -1)
+	{
+		best = 0;
+	}
+
+	hr = dxgiswapChain4->SetColorSpace1( color_spaces[best].dxgi);
+done:
+	m_displayInfo.dxgicolor = color_spaces[best];
+	m_displayInfo.sendmetadata = color_spaces[best].primaries == AVCOL_PRI_BT2020;
+	if (m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
+	{
+		m_displayInfo.luminance_peak = MAX_PQ_BRIGHTNESS;
+	}
+	else
+	{
+		m_displayInfo.luminance_peak = DEFAULT_SRGB_BRIGHTNESS;
+	}
+	dxgiswapChain4->Release();
+}
+
 bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 {
+	m_displayInfo.bitdepth = 10;
+	m_displayInfo.colorspace = AVCOL_SPC_BT2020_NCL;
+	m_displayInfo.full_range = 1;
+	m_displayInfo.primaries = AVCOL_PRI_BT2020;
+	m_displayInfo.transfer = AVCOL_TRC_SMPTEST2084;
 	std::lock_guard<std::mutex> stLock(m_stD3DLock);
 	UINT createDeviceFlags = 0;
+	m_dstDXFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
 #ifdef _DEBUG
-	createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+	//createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
-	createDeviceFlags |= D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
+	//createDeviceFlags |= D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
 	D3D_FEATURE_LEVEL min_level = D3D_FEATURE_LEVEL_9_1;
 	D3D_FEATURE_LEVEL max_level = D3D_FEATURE_LEVEL_11_1;
 	const D3D_FEATURE_LEVEL *levels;
@@ -676,20 +1369,25 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 	{
 		
 	}
-
-	DXGI_FORMAT format = DXGI_FORMAT_R10G10B10A2_UNORM;//DXGI_FORMAT_R8G8B8A8_UNORM
+	else
+	{
+		int kkk = 0;
+	}
+	
+	DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;//DXGI_FORMAT_R8G8B8A8_UNORM
 	DXGI_SWAP_CHAIN_DESC1 out;
 	memset(&out, 0, sizeof(out));
 	out.BufferCount = 3;
-	out.BufferUsage = DXGI_USAGE_BACK_BUFFER | DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	out.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	out.SampleDesc.Count = 1;
 	out.SampleDesc.Quality = 0;
 	out.Width = screenWidth;
 	out.Height = screenHeight;
 	out.Format = format;
+	out.Scaling = DXGI_SCALING_NONE;
 	//out->Flags = 512; // DXGI_SWAP_CHAIN_FLAG_YUV_VIDEO;
 	out.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-
+	out.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
 
 
 	IDXGIAdapter *dxgiadapter = D3D11DeviceAdapter(m_device);
@@ -742,7 +1440,7 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 
 	pMultiThread->Release();
 	pMultiThread = 0;
-
+	SelectSwapchainColorspace();
 	ID3D11Texture2D* backBufferPtr = NULL;
 	// Get the pointer to the back buffer.
 	result = m_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBufferPtr);
@@ -800,6 +1498,15 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 		m_pType = m_pEffect->GetVariableByName("PixType")->AsScalar();
 		m_pSourceWidth = m_pEffect->GetVariableByName("sourcewidth")->AsScalar();
 		m_pSourceHeight = m_pEffect->GetVariableByName("sourceheight")->AsScalar();
+
+		m_ptransfer = m_pEffect->GetVariableByName("transfer")->AsScalar();
+		m_pdistransfer = m_pEffect->GetVariableByName("distransfer")->AsScalar();
+		m_pprimaries = m_pEffect->GetVariableByName("primaries")->AsScalar();
+		m_pdisprimaries = m_pEffect->GetVariableByName("disprimaries")->AsScalar();
+		m_pfullrange = m_pEffect->GetVariableByName("fullrange")->AsScalar();
+		m_psrcrange = m_pEffect->GetVariableByName("srcrange")->AsScalar();
+		m_pLuminanceScale = m_pEffect->GetVariableByName("LuminanceScale")->AsScalar();
+		m_pTransPrimariesInfo = m_pEffect->GetConstantBufferByName("PS_COLOR_TRANSFORM")->AsConstantBuffer();
 		D3D11_INPUT_ELEMENT_DESC ied[] =
 		{
 			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
@@ -854,11 +1561,31 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 	{
 		return false;
 	}
+
 	return true;
 }
 
 bool VideoRenderFilter::InitializeBuffers(ID3D11Device* device)
 {
+	{
+		D3D11_BUFFER_DESC constantDesc;
+		constantDesc.Usage = D3D11_USAGE_DYNAMIC;
+		constantDesc.ByteWidth = sizeof(PS_COLOR_TRANSFORM);
+		constantDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		constantDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		constantDesc.MiscFlags = 0;
+		constantDesc.StructureByteStride = 0;
+
+		D3D11_SUBRESOURCE_DATA constantInit;
+		constantInit.pSysMem = &m_pixtransform;
+		constantInit.SysMemPitch = 0;
+		constantInit.SysMemSlicePitch = 0;
+		HRESULT result = device->CreateBuffer(&constantDesc,&constantInit, &m_pixtranformBuffer);
+		if (FAILED(result))
+		{
+			return false;
+		}
+	}
 	m_vertexCount = 4;
 	m_indexCount = 6;
 	VertexType* vertices = new VertexType[m_vertexCount];
@@ -1525,7 +2252,7 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 		tex_desc.Height = stFrame->m_nHeight;
 		tex_desc.MipLevels = 1;
 		tex_desc.ArraySize = 1;
-		tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		tex_desc.Format = m_dstDXFormat;
 		tex_desc.SampleDesc.Count = 1;
 		tex_desc.SampleDesc.Quality = 0;
 		tex_desc.Usage = D3D11_USAGE_DEFAULT;;
@@ -1540,7 +2267,7 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 		}
 		D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 		ZeroMemory(&srv_desc, sizeof(srv_desc));
-		srv_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		srv_desc.Format = m_dstDXFormat;
 		srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 		srv_desc.Texture2D.MipLevels = 1;
 		srv_desc.Texture2D.MostDetailedMip = 0;

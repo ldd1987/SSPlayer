@@ -8,7 +8,7 @@
 #include "d3dx11effect.h"
 #include <d3d11.h>
 #include <DirectXMath.h>
-# include <dxgi1_5.h>
+# include <dxgi1_6.h>
 #include <vector>
 using namespace DirectX;
 const int MAXPLANE = 4;
@@ -19,6 +19,45 @@ struct DXFormatInfo
 	int height;
 };
 
+typedef enum video_color_axis {
+	COLOR_AXIS_RGB,
+	COLOR_AXIS_YCBCR,
+} video_color_axis;
+
+typedef struct {
+	DXGI_COLOR_SPACE_TYPE   dxgi;
+	const char              *name;
+	video_color_axis        axis;
+	AVColorPrimaries primaries;
+	AVColorTransferCharacteristic   transfer;
+	AVColorSpace     color;
+	bool                    b_full_range;
+} dxgi_color_space;
+
+struct Primaries
+{
+	float primaries[3][2];
+	float whitepoint[2];
+};
+typedef struct {
+	FLOAT WhitePoint[4 * 4];
+	FLOAT Colorspace[4 * 4];
+	FLOAT Primaries[4 * 4];
+} PS_COLOR_TRANSFORM;
+ struct video_render_cfg_t
+{
+	unsigned width;                        /** rendering video width in pixel */
+	unsigned height;                      /** rendering video height in pixel */
+	unsigned bitdepth;      /** rendering video bit depth in bits per channel */
+	bool full_range;          /** video is full range or studio/limited range */
+	AVColorSpace colorspace;              /** video color space */
+	AVColorPrimaries primaries;       /** video color primaries */
+	AVColorTransferCharacteristic transfer;        /** video transfer function */
+	dxgi_color_space dxgicolor;
+	int luminance_peak;
+	bool sendmetadata;
+} ;
+
 class  VideoRenderFilter : public CSSFilter
 {
 public:
@@ -28,8 +67,10 @@ public:
 	static DWORD WINAPI  SyncRead(LPVOID arg);
 	void ResizeBackBuffer(int nWidth, int nHeight);
 	void UpdateBackBuffer();
-	void RenderToWindow();
+	void RenderToWindow(bool bDirect);
 	bool ReadData();
+	void SetSwapchainSetMetadata(CFrameSharePtr &stFrame);
+	void SelectSwapchainColorspace();
 	bool ReadFrameDataToTexture(CFrameSharePtr &stFrame);
 	bool ResetD3DResource(CFrameSharePtr &stFrame);
 	IDXGIAdapter *D3D11DeviceAdapter(ID3D11Device *d3ddev);
@@ -47,13 +88,14 @@ public:
 	bool UpdateBuffers(ID3D11Buffer*, int, int, int, int);
 	void RenderBuffers(ID3D11Buffer*);
 	std::vector< DXFormatInfo> GetDXFormat(CFrameSharePtr &stFrame);
+	void SetColPrimaries(AVColorPrimaries dst, AVColorPrimaries src , AVColorTransferCharacteristic srctranfunc, CFrameSharePtr &stFrame);
 private:
 	QWidget * m_pWidget;
 	ID3D11Device* m_device;
 	ID3D11DeviceContext* m_deviceContext;
 	IDXGISwapChain1        *m_swapChain;   /* DXGI 1.2 swap chain */
 	IDXGISwapChain4        *m_swapChain4;  /* DXGI 1.5 for HDR metadata */
-	DXGI_HDR_METADATA_HDR10 hdr10;
+	DXGI_HDR_METADATA_HDR10 m_hdr10;
 
 	ID3D11RenderTargetView* m_renderTargetView;
 
@@ -71,7 +113,8 @@ private:
 	ID3D11Texture2D *m_pSourceTexture2d[MAXPLANE];
 	ID3D11ShaderResourceView* m_pSourceTexture[MAXPLANE];
 
-
+	ID3D11Buffer *m_pixtranformBuffer=0;
+	PS_COLOR_TRANSFORM m_pixtransform;
 protected:
 	ID3DX11Effect	*m_pEffect;
 	ID3DX11EffectTechnique *m_pTech;
@@ -86,6 +129,14 @@ protected:
 	ID3DX11EffectShaderResourceVariable	*m_pTextSourceU;
 	ID3DX11EffectShaderResourceVariable	*m_pTextSourceV;
 	ID3DX11EffectShaderResourceVariable	*m_pTextSourceA;
+	ID3DX11EffectScalarVariable     *m_ptransfer;
+	ID3DX11EffectScalarVariable     *m_pdistransfer;
+	ID3DX11EffectScalarVariable     *m_pprimaries;
+	ID3DX11EffectConstantBuffer              *m_pTransPrimariesInfo = 0;
+	ID3DX11EffectScalarVariable     *m_pdisprimaries;
+	ID3DX11EffectScalarVariable     *m_pfullrange;
+	ID3DX11EffectScalarVariable     *m_psrcrange;
+	ID3DX11EffectScalarVariable     *m_pLuminanceScale;
 	ID3D11InputLayout* m_layout;
 
 	ID3D11BlendState* m_alphaEnableBlendingState;
@@ -105,4 +156,9 @@ private:
 	PixType m_RenderPixelFormat;
 	bool m_bRendUpdate;
 	std::mutex	m_stD3DLock;
+	video_render_cfg_t m_displayInfo;
+	AVColorPrimaries m_colPrimariesDst;
+	AVColorPrimaries m_colPrimariesSrc;
+	Primaries m_pMatPrim;
+	DXGI_FORMAT  m_dstDXFormat;
 };

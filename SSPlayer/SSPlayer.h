@@ -2,9 +2,11 @@
 
 #include <QtWidgets/QMainWindow>
 #include "ui_SSPlayer.h"
+
 class CInputFileSource;
 class VideoRenderFilter;
 class AudioRenderFilter;
+void initLoggingSystem(int argc, char* argv[]);
 class SSPlayer : public QMainWindow
 {
 	Q_OBJECT

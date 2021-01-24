@@ -12,6 +12,7 @@ CFrame::CFrame()
 	m_nTimesTamp = 0;
 	m_nBitPerSample = 0;
 	m_nShowTime = 0;
+	m_nPixBits = 8;
 }
 CFrame::CFrame(CFrame&frame)
 {

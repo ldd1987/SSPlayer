@@ -15,6 +15,7 @@ extern "C" {
 #include "libswscale/swscale.h"
 #include "libswresample/swresample.h"
 #include <libavutil/time.h>
+#include <libavutil/mastering_display_metadata.h>
 }
 
 #include <Windows.h>
