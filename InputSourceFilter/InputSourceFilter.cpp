@@ -268,7 +268,6 @@ void CInputFileSource::SyncAudio()
 		if (m_bStartSupportData == false)
 		{
 			m_bStartSupportData = true;
-			m_bPlayVideo = true;
 		}
 	}
 	if (m_bStartSupportData == false)
@@ -327,6 +326,7 @@ void CInputFileSource::SyncAudio()
 					}
 					else
 					{
+						SS_LOG(LOG_WARNING, "send audio time is:%lld, first video time is:%lld", m_nLastAudioTime, framevideo->m_nTimesTamp);
 						m_bPlayVideo = true;
 					}
 				}
@@ -348,7 +348,7 @@ void CInputFileSource::DecoderVideo()
 	}
 	if (m_bStartSupportData == false)
 	{
-		if (m_ListVideo.Size() >= m_nFrameRate > 0 ? m_nFrameRate : 25)
+		if (m_ListVideo.Size() >= m_nFrameRate > 25 ? m_nFrameRate : 25)
 		{
 			m_bStartSupportData = true;
 			m_bPlayVideo = true;
