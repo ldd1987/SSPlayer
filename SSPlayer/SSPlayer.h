@@ -24,6 +24,7 @@ private:
 	QAction * m_pVedioFileInputAct;
 
 	CInputFileSource *m_pInputSourceFilter;
-	VideoRenderFilter *m_pVideoRenderFilter;
+	VideoRenderFilter *m_pVideoRenderFilter1;
+	VideoRenderFilter *m_pVideoRenderFilter2;
 	AudioRenderFilter *m_pAudioRenderFilter;
 };

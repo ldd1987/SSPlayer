@@ -407,8 +407,9 @@ void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries d
 	scale = GetFormatLuminance(dsttranfunc) / GetFormatLuminance(srctranfunc);
 	m_pLuminanceScale->SetFloat(scale);
 }
-VideoRenderFilter::VideoRenderFilter(QWidget*  parent, std::string &strName) : CSSFilter(strName)
+VideoRenderFilter::VideoRenderFilter(QWidget*  parent, std::string &strName, bool bdirect) : CSSFilter(strName)
 {
+	m_bDirect = bdirect;
 	m_alphaEnableBlendingState = NULL;
 	m_alphaDisableBlendingState = NULL;
 	m_swapChain = 0;
@@ -692,7 +693,7 @@ bool VideoRenderFilter::ReadData()
 	int srcrange = 1;
 
 	XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-	bool bRendToTexture = true;
+	bool bRendToTexture = m_bDirect ? false : true;
 	// render to texture
 	if (bRendToTexture)
 	{

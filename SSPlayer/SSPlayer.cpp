@@ -13,8 +13,18 @@ SSPlayer::SSPlayer(QWidget *parent)
 	initLoggingSystem(__argc, __argv);
 	timeBeginPeriod(1);
 	ui.setupUi(this);
+	ui.widget->setFixedSize(640, 360);
+	ui.widget->move(0, 0);
+	ui.widget->show();
+	ui.widget_2->setFixedSize(640, 360);
+	ui.widget_2->move(640 + 20, 0);
+	ui.widget_2->show();
 	std::string strName = "dx11-render";
-	m_pVideoRenderFilter = new VideoRenderFilter(ui.centralWidget, strName);
+	m_pVideoRenderFilter1 = new VideoRenderFilter(ui.widget, strName, true);
+
+	std::string strName1 = "dx11-render2";
+	m_pVideoRenderFilter2 = new VideoRenderFilter(ui.widget_2, strName1, false);
+
 	strName = "audio-render";
 	m_pAudioRenderFilter = new AudioRenderFilter(strName);
 	m_pInputSourceFilter = 0;
@@ -50,10 +60,14 @@ void SSPlayer::ShowContextMenu(const QPoint& pos) // this is a slot
 void SSPlayer::resizeEvent(QResizeEvent* pstEvent)
 {
 	QSize size = pstEvent->size();
-	if (m_pVideoRenderFilter)
+	/*if (m_pVideoRenderFilter1)
 	{
-		m_pVideoRenderFilter->ResizeBackBuffer(ui.centralWidget->width(), ui.centralWidget->height());
+		m_pVideoRenderFilter1->ResizeBackBuffer(ui.centralWidget->width(), ui.centralWidget->height());
 	}
+	if (m_pVideoRenderFilter2)
+	{
+		m_pVideoRenderFilter2->ResizeBackBuffer(ui.centralWidget->width(), ui.centralWidget->height());
+	}*/
 }
 
 SSPlayer::~SSPlayer()
@@ -92,7 +106,8 @@ void SSPlayer::SlotOpenFile()
 				CInputSourceParam param;
 				param.m_strFileName = strFileName.toLocal8Bit().toStdString();
 				m_pInputSourceFilter = new CInputFileSource(param);
-				m_pInputSourceFilter->ConnectFilter(m_pVideoRenderFilter);
+				m_pInputSourceFilter->ConnectFilter(m_pVideoRenderFilter1);
+				m_pInputSourceFilter->ConnectFilter(m_pVideoRenderFilter2);
 				m_pInputSourceFilter->ConnectFilter(m_pAudioRenderFilter);
 				m_pInputSourceFilter->StartService();
 			}

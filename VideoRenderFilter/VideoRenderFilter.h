@@ -61,7 +61,7 @@ typedef struct {
 class  VideoRenderFilter : public CSSFilter
 {
 public:
-	VideoRenderFilter(QWidget*  parent, std::string &strName);
+	VideoRenderFilter(QWidget*  parent, std::string &strName, bool bdirect= true);
 	virtual ~VideoRenderFilter();
 	virtual int InputData(CFrameSharePtr &frame);
 	static DWORD WINAPI  SyncRead(LPVOID arg);
@@ -162,4 +162,5 @@ private:
 	AVColorPrimaries m_colPrimariesSrc;
 	Primaries m_pMatPrim;
 	DXGI_FORMAT  m_dstDXFormat;
+	bool m_bDirect;
 };
