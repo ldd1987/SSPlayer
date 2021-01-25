@@ -278,7 +278,7 @@ bool IsRGB(CFrameSharePtr &stFrame)
 	
 }
 
-void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries dst, AVColorTransferCharacteristic srctranfunc, CFrameSharePtr &stFrame)
+void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries dst, AVColorTransferCharacteristic srctranfunc, AVColorTransferCharacteristic dsttranfunc, CFrameSharePtr &stFrame)
 {
 	m_colPrimariesDst = dst;
 	m_colPrimariesSrc = src;
@@ -404,6 +404,7 @@ void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries d
 	m_pTransPrimariesInfo->SetConstantBuffer(m_pixtranformBuffer);
 
 	float scale = m_displayInfo.luminance_peak / GetFormatLuminance(srctranfunc);
+	scale = GetFormatLuminance(dsttranfunc) / GetFormatLuminance(srctranfunc);
 	m_pLuminanceScale->SetFloat(scale);
 }
 VideoRenderFilter::VideoRenderFilter(QWidget*  parent, std::string &strName) : CSSFilter(strName)
@@ -718,7 +719,7 @@ bool VideoRenderFilter::ReadData()
 		view.m[3][3] = 1.0f;
 		viewMatrix = XMLoadFloat4x4(&view);
 		m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-		SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries,stFrame->color_trc,stFrame);
+		SetColPrimaries(stFrame->color_primaries, AVCOL_PRI_BT2020,stFrame->color_trc, AVCOL_TRC_SMPTEST2084,stFrame);
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
 		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
 		m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
@@ -727,9 +728,9 @@ bool VideoRenderFilter::ReadData()
 		m_pSourceHeight->SetInt(stFrame->m_nHeight);
 		m_pSourceWidth->SetInt(stFrame->m_nWidth);
 		m_ptransfer->SetInt(transfer);
-		m_pdistransfer->SetInt(distransfer);
+		m_pdistransfer->SetInt(AVCOL_TRC_SMPTEST2084);
 		m_pprimaries->SetInt(primaries);
-		m_pdisprimaries->SetInt(disprimaries);
+		m_pdisprimaries->SetInt(AVCOL_PRI_BT2020);
 		m_pfullrange->SetInt(fullrange);
 		m_psrcrange->SetInt(srcrange);
 		m_pDrawLine->SetInt(1);
@@ -778,7 +779,7 @@ bool VideoRenderFilter::ReadData()
 	m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
 	if (false == bRendToTexture)
 	{
-		SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, stFrame);
+		SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
 		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
 		m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
@@ -796,11 +797,12 @@ bool VideoRenderFilter::ReadData()
 	}
 	else
 	{
+		SetColPrimaries(AVCOL_PRI_BT2020, m_displayInfo.dxgicolor.primaries, AVCOL_TRC_SMPTEST2084, m_displayInfo.dxgicolor.transfer, stFrame);
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_textureText);
 		m_pType->SetInt(1);
-		m_ptransfer->SetInt(transfer);
+		m_ptransfer->SetInt(AVCOL_TRC_LINEAR);
 		m_pdistransfer->SetInt(distransfer);
-		m_pprimaries->SetInt(primaries);
+		m_pprimaries->SetInt(AVCOL_PRI_BT2020);
 		m_pdisprimaries->SetInt(disprimaries);
 		m_pfullrange->SetInt(1);
 		m_psrcrange->SetInt(1);

@@ -193,15 +193,15 @@ float4 HDRToneMapping(float4 rgb)
 
 float4 sourceToLinear(float4 rgb)
 {
-	if (transfer == distransfer)
+	if (transfer == 8)  //line 
 	{
 		return rgb;
 	}
-	else if (transfer == 16)
+	else if (transfer == 16) // pq
 	{
 		return ST2084TOLinear(rgb);
 	}
-	else if (transfer == 1)
+	else if (transfer == 1) // bt709
 	{
 		return BT709TOLinear(rgb);
 	}
@@ -231,24 +231,22 @@ float4 transformPrimaries(float4 rgb)
 
 float4 toneMapping(float4 rgb)
 {
-	if (distransfer == 1 || distransfer == 4)
+
+	if (disprimaries != 9)
 	{
-		if (transfer == 16)
-		{
-			return HDRToneMapping(rgb);
-		}
-		else if (transfer == 18)
+
+		if (primaries == 9)
 		{
 			return HDRToneMapping(rgb);
 		}
 		else
 		{
-			return rgb * LuminanceScale;
+			return rgb;
 		}
 	}
 	else
 	{
-		return rgb;
+		return rgb * LuminanceScale;
 	}
 }
 
@@ -294,6 +292,9 @@ float4 RenderFloat(float4 rgb)
 { 
 	if (DrawLine == 0)
 	{
+		rgb = sourceToLinear(rgb);
+		rgb = transformPrimaries(rgb);
+		rgb = toneMapping(rgb);
 		rgb = linearToDisplay(rgb);
 		rgb = adjustRange(rgb);
 		rgb = reorderPlanes(rgb);
