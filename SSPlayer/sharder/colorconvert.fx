@@ -209,6 +209,18 @@ float4 sourceToLinear(float4 rgb)
 	{
 		return BT709TOLinear(rgb);
 	}
+	else if (transfer == 4)
+	{
+		return BT470M_SRGB_TOLinear(rgb);
+	}
+	else if (transfer == 5)
+	{
+		return BT470BGTOLinear(rgb);
+	}
+	/*else if (transfer == 1)
+	{
+
+	}*/
 	else
 	{
 		return rgb;
@@ -318,9 +330,6 @@ float4 RenderFloat(float4 rgb)
 		rgb = adjustRange(rgb);
 		rgb = reorderPlanes(rgb);
 	}
-		
-		
-		
 		return float4(rgb.rgb, 1); 
 }
 
