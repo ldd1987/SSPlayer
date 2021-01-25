@@ -22,6 +22,7 @@ int disprimaries;
 int fullrange;
 int srcrange;
 float LuminanceScale;
+int DrawLine;
 
 
 SamplerState SamplerDiffuse
@@ -291,12 +292,30 @@ float4 reorderPlanes(float4 rgb)
 
 float4 RenderFloat(float4 rgb)
 { 
-		rgb = sourceToLinear(rgb); 
+	if (DrawLine == 0)
+	{
+		rgb = linearToDisplay(rgb);
+		rgb = adjustRange(rgb);
+		rgb = reorderPlanes(rgb);
+	}
+	else if (DrawLine == 1)
+	{
+		rgb = sourceToLinear(rgb);
 		rgb = transformPrimaries(rgb);
-		rgb = toneMapping(rgb); 
-		rgb = linearToDisplay(rgb); 
-		rgb = adjustRange(rgb); 
-		rgb = reorderPlanes(rgb); 
+		rgb = toneMapping(rgb);
+	}
+	else
+	{
+		rgb = sourceToLinear(rgb);
+		rgb = transformPrimaries(rgb);
+		rgb = toneMapping(rgb);
+		rgb = linearToDisplay(rgb);
+		rgb = adjustRange(rgb);
+		rgb = reorderPlanes(rgb);
+	}
+		
+		
+		
 		return float4(rgb.rgb, 1); 
 }
 

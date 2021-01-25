@@ -137,6 +137,7 @@ protected:
 	ID3DX11EffectScalarVariable     *m_pfullrange;
 	ID3DX11EffectScalarVariable     *m_psrcrange;
 	ID3DX11EffectScalarVariable     *m_pLuminanceScale;
+	ID3DX11EffectScalarVariable     *m_pDrawLine;
 	ID3D11InputLayout* m_layout;
 
 	ID3D11BlendState* m_alphaEnableBlendingState;

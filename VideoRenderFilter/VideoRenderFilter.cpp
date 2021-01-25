@@ -691,15 +691,13 @@ bool VideoRenderFilter::ReadData()
 	int srcrange = 1;
 
 	XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-	bool bRendToTexture = false;
+	bool bRendToTexture = true;
 	// render to texture
 	if (bRendToTexture)
 	{
 		m_deviceContext->OMSetRenderTargets(1, &m_renderTextureTargetView, NULL);
 		m_deviceContext->RSSetViewports(1, &viewportframe);
 		BeginScene(0.0f, 0.0f, 0.0f, 1.0f, m_renderTextureTargetView, NULL);
-		//	TurnOnAlphaBlending();
-			// Put the vertex and index buffers on the graphics pipeline to prepare them for drawing.
 		RenderBuffers(m_vertexBufferSource);
 		XMFLOAT4X4 view;
 		view.m[0][0] = 2.0f / stFrame->m_nWidth;
@@ -719,7 +717,6 @@ bool VideoRenderFilter::ReadData()
 		view.m[3][2] = 0.0f;
 		view.m[3][3] = 1.0f;
 		viewMatrix = XMLoadFloat4x4(&view);
-		//	m_pWorldMatVar->SetMatrix(reinterpret_cast<const float*>(&worldMatrix));
 		m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
 		SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries,stFrame->color_trc,stFrame);
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
@@ -735,6 +732,7 @@ bool VideoRenderFilter::ReadData()
 		m_pdisprimaries->SetInt(disprimaries);
 		m_pfullrange->SetInt(fullrange);
 		m_psrcrange->SetInt(srcrange);
+		m_pDrawLine->SetInt(1);
 		m_deviceContext->IASetInputLayout(m_layout);
 		D3DX11_TECHNIQUE_DESC techDesc;
 		m_pTech->GetDesc(&techDesc);
@@ -794,17 +792,19 @@ bool VideoRenderFilter::ReadData()
 		m_pdisprimaries->SetInt(disprimaries);
 		m_pfullrange->SetInt(fullrange);
 		m_psrcrange->SetInt(srcrange);
+		m_pDrawLine->SetInt(2);
 	}
 	else
 	{
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_textureText);
 		m_pType->SetInt(1);
-		m_ptransfer->SetInt(m_displayInfo.dxgicolor.transfer);
-		m_pdistransfer->SetInt(m_displayInfo.dxgicolor.transfer);
-		m_pprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
-		m_pdisprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
+		m_ptransfer->SetInt(transfer);
+		m_pdistransfer->SetInt(distransfer);
+		m_pprimaries->SetInt(primaries);
+		m_pdisprimaries->SetInt(disprimaries);
 		m_pfullrange->SetInt(1);
 		m_psrcrange->SetInt(1);
+		m_pDrawLine->SetInt(0);
 	}
 	
 	m_deviceContext->IASetInputLayout(m_layout);
@@ -1395,6 +1395,29 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 	{
 		return false;
 	}
+	UINT i = 0;
+	IDXGIOutput * pOutput;
+	std::vector<IDXGIOutput*> vOutputs;
+	while (dxgiadapter->EnumOutputs(i, &pOutput) != DXGI_ERROR_NOT_FOUND)
+	{
+		DXGI_OUTPUT_DESC outdesc;
+		pOutput->GetDesc(&outdesc);
+
+		vOutputs.push_back(pOutput);
+
+
+		IDXGIOutput6 *dxgiOutput6 = NULL;
+		if (SUCCEEDED(pOutput->QueryInterface((IID_IDXGIOutput6), (void **)&dxgiOutput6)))
+		{
+			DXGI_OUTPUT_DESC1 desc1;
+			if (SUCCEEDED(dxgiOutput6->GetDesc1(&desc1)))
+			{
+				
+			}
+			dxgiOutput6->Release();
+		}
+		++i;
+	}
 	IDXGIDevice1 *pDXGIDevice = NULL;
 	result = m_device->QueryInterface(IID_IDXGIDevice1, (void **)&pDXGIDevice);
 	if (FAILED(result))
@@ -1498,7 +1521,8 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 		m_pType = m_pEffect->GetVariableByName("PixType")->AsScalar();
 		m_pSourceWidth = m_pEffect->GetVariableByName("sourcewidth")->AsScalar();
 		m_pSourceHeight = m_pEffect->GetVariableByName("sourceheight")->AsScalar();
-
+		m_pDrawLine = m_pEffect->GetVariableByName("DrawLine")->AsScalar();
+		
 		m_ptransfer = m_pEffect->GetVariableByName("transfer")->AsScalar();
 		m_pdistransfer = m_pEffect->GetVariableByName("distransfer")->AsScalar();
 		m_pprimaries = m_pEffect->GetVariableByName("primaries")->AsScalar();
@@ -2252,7 +2276,7 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 		tex_desc.Height = stFrame->m_nHeight;
 		tex_desc.MipLevels = 1;
 		tex_desc.ArraySize = 1;
-		tex_desc.Format = m_dstDXFormat;
+		tex_desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
 		tex_desc.SampleDesc.Count = 1;
 		tex_desc.SampleDesc.Quality = 0;
 		tex_desc.Usage = D3D11_USAGE_DEFAULT;;
@@ -2267,7 +2291,7 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 		}
 		D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 		ZeroMemory(&srv_desc, sizeof(srv_desc));
-		srv_desc.Format = m_dstDXFormat;
+		srv_desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
 		srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 		srv_desc.Texture2D.MipLevels = 1;
 		srv_desc.Texture2D.MostDetailedMip = 0;
