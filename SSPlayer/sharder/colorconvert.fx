@@ -201,6 +201,10 @@ float4 sourceToLinear(float4 rgb)
 	{
 		return ST2084TOLinear(rgb);
 	}
+	else if (transfer == 18) // hlg
+	{
+		return HLGTOLinear(rgb);
+	}
 	else if (transfer == 1) // bt709
 	{
 		return BT709TOLinear(rgb);
@@ -400,8 +404,6 @@ inline float4 GetRGBA(VS_OUTPUT input)
 float4 PS(VS_OUTPUT input) : SV_TARGET
 {
 		float4 rgba = GetRGBA(input);
-	/*	float3 rgb = pow(rgba.rgb, 1);
-		rgba.rgb = rgb;*/
 		return rgba;
 }
 

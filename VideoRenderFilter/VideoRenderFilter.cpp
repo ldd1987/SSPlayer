@@ -1214,29 +1214,52 @@ void VideoRenderFilter::SetSwapchainSetMetadata(CFrameSharePtr &stFrame)
 	if (stFrame->hasDisplayMetadata && m_displayInfo.sendmetadata && m_swapChain4)
 	{
 		DXGI_HDR_METADATA_HDR10  hdr10 = { 0 };
-		 if (stFrame->hasLightMetadata)
-		 {
-			 hdr10.MaxContentLightLevel = stFrame->lightMetadata.MaxCLL;
-			 hdr10.MaxFrameAverageLightLevel = stFrame->lightMetadata.MaxFALL;
-		 }
-		 if (stFrame->hasDisplayMetadata)
-		 {
-			 hdr10.GreenPrimary[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_GREEN][0]);
-			 hdr10.GreenPrimary[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_GREEN][1]);
-			 hdr10.BluePrimary[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_BLUE][0]);
-			 hdr10.BluePrimary[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_BLUE][1]);
-			 hdr10.RedPrimary[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_RED][0]);
-			 hdr10.RedPrimary[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_RED][1]);
-			 hdr10.WhitePoint[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.white_point[0]);
-			 hdr10.WhitePoint[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.white_point[1]);
-			 hdr10.MinMasteringLuminance = FROM_AVRAT(ST2086_LUMA_FACTOR, stFrame->displayMetadata.min_luminance);;
-			 hdr10.MaxMasteringLuminance = FROM_AVRAT(ST2086_LUMA_FACTOR, stFrame->displayMetadata.max_luminance);;
-		 }
-		 if (true || false == isEqueHDR(hdr10, m_hdr10))
-		 {
-			 m_swapChain4->SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, sizeof(&hdr10), &hdr10);
-			 m_hdr10 = hdr10;
-		 }
+		if (stFrame->color_trc == AVCOL_TRC_SMPTE2084 && stFrame->color_primaries == AVCOL_PRI_BT2020)
+		{
+			if (stFrame->hasLightMetadata)
+			{
+				hdr10.MaxContentLightLevel = stFrame->lightMetadata.MaxCLL;
+				hdr10.MaxFrameAverageLightLevel = stFrame->lightMetadata.MaxFALL;
+			}
+			if (stFrame->hasDisplayMetadata)
+			{
+				hdr10.GreenPrimary[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_GREEN][0]);
+				hdr10.GreenPrimary[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_GREEN][1]);
+				hdr10.BluePrimary[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_BLUE][0]);
+				hdr10.BluePrimary[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_BLUE][1]);
+				hdr10.RedPrimary[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_RED][0]);
+				hdr10.RedPrimary[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.display_primaries[LAV_RED][1]);
+				hdr10.WhitePoint[0] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.white_point[0]);
+				hdr10.WhitePoint[1] = FROM_AVRAT(ST2086_PRIM_FACTOR, stFrame->displayMetadata.white_point[1]);
+				hdr10.MinMasteringLuminance = FROM_AVRAT(ST2086_LUMA_FACTOR, stFrame->displayMetadata.min_luminance);;
+				hdr10.MaxMasteringLuminance = FROM_AVRAT(ST2086_LUMA_FACTOR, stFrame->displayMetadata.max_luminance);;
+			}
+			if (true || false == isEqueHDR(hdr10, m_hdr10))
+			{
+				m_swapChain4->SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, sizeof(&hdr10), &hdr10);
+				m_hdr10 = hdr10;
+			}
+		}
+		else if (stFrame->color_trc == AVCOL_TRC_ARIB_STD_B67 && stFrame->color_primaries == AVCOL_PRI_BT2020)// HLG
+		{
+			hdr10.RedPrimary[0] = 34000; // Display P3 primaries
+			hdr10.RedPrimary[1] = 16000;
+			hdr10.GreenPrimary[0] = 13250;
+			hdr10.GreenPrimary[1] = 34500;
+			hdr10.BluePrimary[0] = 7500;
+			hdr10.BluePrimary[1] = 3000;
+			hdr10.WhitePoint[0] = 15635;
+			hdr10.WhitePoint[1] = 16450;
+			hdr10.MaxMasteringLuminance = 1000 * 10000; // 1000 nits
+			hdr10.MinMasteringLuminance = 100; // 0.01 nits
+			if (true || false == isEqueHDR(hdr10, m_hdr10))
+			{
+				m_swapChain4->SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, sizeof(&hdr10), &hdr10);
+				m_hdr10 = hdr10;
+			}
+		}
+		
+		
 
 		
 	}

@@ -64,7 +64,7 @@ SSPlayer::~SSPlayer()
 
 void SSPlayer::SlotOpenFile()
 {
-	QString Video = QString::fromLocal8Bit("视频文件(*.mp4 *.rm *.rmvb *.avi *.mkv *.flv *.3gp *.mpg *.mov *.ts *.wmv *.vob *.mxf *.dat)");
+	QString Video = QString::fromLocal8Bit("视频文件(*.mp4 *.rm *.rmvb *.avi *.mkv *.flv *.3gp *.mpg *.mov *.ts *.wmv *.vob *.mxf *.dat *.webm)");
 	QString Image = QString::fromLocal8Bit("音频文件(*.mp3 *.aac)");
 	QFileDialog stFileDialog(NULL, QString::fromLocal8Bit("打开文件"), NULL);
 	QStringList filters;
