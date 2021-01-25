@@ -247,11 +247,13 @@ float4 transformPrimaries(float4 rgb)
 
 float4 toneMapping(float4 rgb)
 {
-
-	if (disprimaries != 9)
+	if (distransfer == 1 || distransfer == 4)
 	{
-
-		if (primaries == 9)
+		if (transfer == 16 || transfer == 18)
+		{
+			return HDRToneMapping(rgb);
+		}
+		else if (transfer == 8 && primaries == 9)
 		{
 			return HDRToneMapping(rgb);
 		}
@@ -262,8 +264,9 @@ float4 toneMapping(float4 rgb)
 	}
 	else
 	{
-		return rgb * LuminanceScale;
+		return rgb;
 	}
+
 }
 
 float4 adjustRange(float4 rgb)
@@ -273,17 +276,13 @@ float4 adjustRange(float4 rgb)
 
 float4 linearToDisplay(float4 rgb)
 {
-	if (distransfer == transfer)
-	{
-		return rgb;
-	}
 	if (distransfer == 16)
 	{
 		return LineTOST2084(rgb);
 	}
 	else if (distransfer == 18)
 	{
-		return rgb;
+		return LineTOST2084(rgb);
 	}
 	else if (distransfer == 1)
 	{
@@ -320,6 +319,9 @@ float4 RenderFloat(float4 rgb)
 		rgb = sourceToLinear(rgb);
 		rgb = transformPrimaries(rgb);
 		rgb = toneMapping(rgb);
+		rgb = linearToDisplay(rgb);
+		rgb = adjustRange(rgb);
+		rgb = reorderPlanes(rgb);
 	}
 	else
 	{
@@ -375,6 +377,7 @@ inline float4 GetRGBA(VS_OUTPUT input)
 			float4 rgbarsp = mul(rgbasub, yuv2rgbmatrix);
 		float	rgbarsp1 = RenderFloat(rgbarsp);
 			rgbarsp.a = 1;
+			
 		return rgbarsp;
 	}
 	else if (1 == PixType) // bgra

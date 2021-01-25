@@ -20,10 +20,10 @@ struct MatrixBufferType
 #define MAX_PQ_BRIGHTNESS        10000
 dxgi_color_space color_spaces[]=
 {
-	{DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709,"DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_GAMMA22, AVCOL_SPC_BT709,true},
+	{DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709,"DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_BT709, AVCOL_SPC_BT709,true},
 	{DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709,"DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_LINEAR, AVCOL_SPC_BT709,true},
-	{DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P709,"DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_GAMMA22, AVCOL_SPC_BT709,false},
-	{DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P2020,"DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P2020",COLOR_AXIS_RGB,AVCOL_PRI_BT2020,AVCOL_TRC_GAMMA22, AVCOL_SPC_BT2020_NCL,false},
+	{DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P709,"DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_BT709, AVCOL_SPC_BT709,false},
+	{DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P2020,"DXGI_COLOR_SPACE_RGB_STUDIO_G22_NONE_P2020",COLOR_AXIS_RGB,AVCOL_PRI_BT2020,AVCOL_TRC_BT709, AVCOL_SPC_BT2020_NCL,false},
 	{DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,"DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020",COLOR_AXIS_RGB,AVCOL_PRI_BT2020,AVCOL_TRC_SMPTE2084, AVCOL_SPC_BT2020_NCL,true},
 	{DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020,"DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020",COLOR_AXIS_RGB,AVCOL_PRI_BT2020,AVCOL_TRC_SMPTE2084, AVCOL_SPC_BT2020_NCL,false},
 	{DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020,"DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020",COLOR_AXIS_RGB,AVCOL_PRI_BT2020,AVCOL_TRC_GAMMA22, AVCOL_SPC_BT2020_NCL,true},
@@ -550,7 +550,7 @@ void VideoRenderFilter::UpdateBackBuffer()
 			texure2d->GetDesc(&dsc);
 			res->Release();
 		}
-		if (dsc.Width == m_nTextureWidth && dsc.Height == m_nTextureHeight)
+		if (dsc.Width == m_nTextureWidth && dsc.Height == m_nTextureHeight && dsc.Format== m_dstDXFormat)
 		{
 			break;
 		}
@@ -561,7 +561,7 @@ void VideoRenderFilter::UpdateBackBuffer()
 			m_renderTargetView->Release();
 			m_renderTargetView = NULL;
 		}
-		HRESULT result = m_swapChain->ResizeBuffers(0, m_nTextureWidth, m_nTextureHeight, DXGI_FORMAT_R8G8B8A8_UNORM, 0);
+		HRESULT result = m_swapChain->ResizeBuffers(0, m_nTextureWidth, m_nTextureHeight, m_dstDXFormat, 0);
 		// Get the pointer to the back buffer.
 		result = m_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBufferPtr);
 		if (FAILED(result))
@@ -719,7 +719,15 @@ bool VideoRenderFilter::ReadData()
 		view.m[3][3] = 1.0f;
 		viewMatrix = XMLoadFloat4x4(&view);
 		m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-		SetColPrimaries(stFrame->color_primaries, AVCOL_PRI_BT2020,stFrame->color_trc, AVCOL_TRC_SMPTEST2084,stFrame);
+		if (m_dstDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+		{
+			SetColPrimaries(stFrame->color_primaries, AVCOL_PRI_BT2020, stFrame->color_trc, AVCOL_TRC_SMPTE2084, stFrame);
+		}
+		else
+		{
+			SetColPrimaries(stFrame->color_primaries, AVCOL_PRI_BT709, stFrame->color_trc, AVCOL_TRC_BT709, stFrame);
+		}
+		
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
 		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
 		m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
@@ -728,9 +736,9 @@ bool VideoRenderFilter::ReadData()
 		m_pSourceHeight->SetInt(stFrame->m_nHeight);
 		m_pSourceWidth->SetInt(stFrame->m_nWidth);
 		m_ptransfer->SetInt(transfer);
-		m_pdistransfer->SetInt(AVCOL_TRC_SMPTEST2084);
+		m_pdistransfer->SetInt(AVCOL_TRC_BT709);
 		m_pprimaries->SetInt(primaries);
-		m_pdisprimaries->SetInt(AVCOL_PRI_BT2020);
+		m_pdisprimaries->SetInt(AVCOL_PRI_BT709);
 		m_pfullrange->SetInt(fullrange);
 		m_psrcrange->SetInt(srcrange);
 		m_pDrawLine->SetInt(1);
@@ -744,8 +752,8 @@ bool VideoRenderFilter::ReadData()
 		}
 
 	}
-	ID3D11ShaderResourceView *const pSRV[1] = { NULL };
-	m_deviceContext->PSSetShaderResources(0, 1, pSRV);
+	ID3D11ShaderResourceView *const pSRV[3] = { NULL };
+	m_deviceContext->PSSetShaderResources(0, 3, pSRV);
 	//XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
 	// renderto  backbuffer
 	if (m_bRendUpdate)
@@ -794,29 +802,50 @@ bool VideoRenderFilter::ReadData()
 		m_pfullrange->SetInt(fullrange);
 		m_psrcrange->SetInt(srcrange);
 		m_pDrawLine->SetInt(2);
+		m_deviceContext->IASetInputLayout(m_layout);
+		D3DX11_TECHNIQUE_DESC techDescwindow;
+		m_pTech->GetDesc(&techDescwindow);
+		for (UINT i = 0; i < techDescwindow.Passes; ++i)
+		{
+			m_pTech->GetPassByIndex(i)->Apply(0, m_deviceContext);
+			m_deviceContext->DrawIndexed(m_indexCount, 0, 0);
+		}
 	}
 	else
 	{
-		SetColPrimaries(AVCOL_PRI_BT2020, m_displayInfo.dxgicolor.primaries, AVCOL_TRC_SMPTEST2084, m_displayInfo.dxgicolor.transfer, stFrame);
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_textureText);
+		m_pTextSourceU->SetResource(0);
+		m_pTextSourceV->SetResource(0);
+		m_pTextSourceA->SetResource(0);
 		m_pType->SetInt(1);
-		m_ptransfer->SetInt(AVCOL_TRC_LINEAR);
+		if (m_dstDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+		{
+			m_ptransfer->SetInt(AVCOL_TRC_SMPTEST2084);
+			m_pprimaries->SetInt(AVCOL_PRI_BT2020);
+			SetColPrimaries(AVCOL_PRI_BT2020, m_displayInfo.dxgicolor.primaries, AVCOL_TRC_SMPTE2084, m_displayInfo.dxgicolor.transfer, stFrame);
+		}
+		else
+		{
+			m_ptransfer->SetInt(AVCOL_TRC_BT709);
+			m_pprimaries->SetInt(AVCOL_PRI_BT709);
+			SetColPrimaries(AVCOL_PRI_BT709, m_displayInfo.dxgicolor.primaries, AVCOL_TRC_BT709, m_displayInfo.dxgicolor.transfer, stFrame);
+		}
 		m_pdistransfer->SetInt(distransfer);
-		m_pprimaries->SetInt(AVCOL_PRI_BT2020);
 		m_pdisprimaries->SetInt(disprimaries);
 		m_pfullrange->SetInt(1);
 		m_psrcrange->SetInt(1);
 		m_pDrawLine->SetInt(0);
+		m_deviceContext->IASetInputLayout(m_layout);
+		D3DX11_TECHNIQUE_DESC techDescwindow;
+		m_pTech->GetDesc(&techDescwindow);
+		for (UINT i = 0; i < techDescwindow.Passes; ++i)
+		{
+			m_pTech->GetPassByIndex(i)->Apply(0, m_deviceContext);
+			m_deviceContext->DrawIndexed(m_indexCount, 0, 0);
+		}
 	}
 	
-	m_deviceContext->IASetInputLayout(m_layout);
-	D3DX11_TECHNIQUE_DESC techDescwindow;
-	m_pTech->GetDesc(&techDescwindow);
-	for (UINT i = 0; i < techDescwindow.Passes; ++i)
-	{
-		m_pTech->GetPassByIndex(i)->Apply(0, m_deviceContext);
-		m_deviceContext->DrawIndexed(m_indexCount, 0, 0);
-	}
+	
 	EndScene();
 	m_deviceContext->PSSetShaderResources(0, 1, pSRV);
 	return bRet;
@@ -1371,7 +1400,7 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 	m_displayInfo.transfer = AVCOL_TRC_SMPTEST2084;
 	std::lock_guard<std::mutex> stLock(m_stD3DLock);
 	UINT createDeviceFlags = 0;
-	m_dstDXFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+	m_dstDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 #ifdef _DEBUG
 	//createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
@@ -1489,6 +1518,14 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 	pMultiThread->Release();
 	pMultiThread = 0;
 	SelectSwapchainColorspace();
+	if (m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
+	{
+		m_dstDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	}
+	else
+	{
+		m_dstDXFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+	}
 	ID3D11Texture2D* backBufferPtr = NULL;
 	// Get the pointer to the back buffer.
 	result = m_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBufferPtr);
