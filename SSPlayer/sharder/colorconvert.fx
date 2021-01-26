@@ -391,8 +391,8 @@ inline float4 GetRGBA(VS_OUTPUT input)
 	else if (3 == PixType)
 	{
 		float4 rgba = PSPacked422_Reverse(input, 1, 3, 2, 0);
-			float4 rgbasub = rgba - bt709yuv;
-			float4 rgbarsp = mul(rgbasub, yuv2rgbmatrix);
+		float4 rr = mul(rgba, WhitePoint);
+		float4 rgbarsp = max(mul(rr, yuv2rgbmatrix), 0);
 			rgbarsp = RenderFloat(rgbarsp);
 			rgbarsp.a = 1;
 		return rgbarsp;
@@ -400,8 +400,8 @@ inline float4 GetRGBA(VS_OUTPUT input)
 	else if (2 == PixType)
 	{
 		float4 rgba = PSPlanar420_Reverse(input);
-			float4 rgbasub = rgba - bt709yuv;
-			float4 rgbarsp = mul(rgbasub, yuv2rgbmatrix);
+		float4 rr = mul(rgba, WhitePoint);
+		float4 rgbarsp = max(mul(rr, yuv2rgbmatrix), 0);
 		float	rgbarsp1 = RenderFloat(rgbarsp);
 			rgbarsp.a = 1;
 			
