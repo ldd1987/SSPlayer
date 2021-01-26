@@ -348,7 +348,7 @@ void CInputFileSource::DecoderVideo()
 	}
 	if (m_bStartSupportData == false)
 	{
-		if (m_ListVideo.Size() >= m_nFrameRate > 25 ? m_nFrameRate : 25)
+		if (m_ListVideo.Size() >= (m_nFrameRate > 25 ? m_nFrameRate : 25))
 		{
 			m_bStartSupportData = true;
 			m_bPlayVideo = true;
@@ -467,7 +467,7 @@ void CInputFileSource::DecoderVideo()
 							stFrame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
 							stFrame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
 							stFrame->color_range = AVCOL_RANGE_MPEG;
-							stFrame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_LINEAR : m_pstVideoCodecCtx->color_trc;;
+							stFrame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
 							stFrame->hasDisplayMetadata = false;
 							stFrame->hasLightMetadata = false;
 							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
@@ -532,7 +532,7 @@ void CInputFileSource::DecoderVideo()
 							stFrame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
 							stFrame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
 							stFrame->color_range = AVCOL_RANGE_MPEG;
-							stFrame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_LINEAR : m_pstVideoCodecCtx->color_trc;;
+							stFrame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
 							stFrame->hasDisplayMetadata = false;
 							stFrame->hasLightMetadata = false;
 							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
@@ -589,7 +589,7 @@ void CInputFileSource::DecoderVideo()
 							frame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
 							frame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
 							frame->color_range = AVCOL_RANGE_MPEG;
-							frame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_LINEAR : m_pstVideoCodecCtx->color_trc;;
+							frame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
 							frame->hasDisplayMetadata = false;
 							frame->hasLightMetadata = false;
 							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
@@ -648,7 +648,7 @@ void CInputFileSource::DecoderVideo()
 							frame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
 							frame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
 							frame->color_range = AVCOL_RANGE_MPEG;
-							frame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_LINEAR : m_pstVideoCodecCtx->color_trc;;
+							frame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
 							frame->hasDisplayMetadata = false;
 							frame->hasLightMetadata = false;
 							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
@@ -710,7 +710,7 @@ void CInputFileSource::DecoderVideo()
 							frame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
 							frame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
 							frame->color_range = AVCOL_RANGE_MPEG;
-							frame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_LINEAR : m_pstVideoCodecCtx->color_trc;;
+							frame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
 							frame->hasDisplayMetadata = false;
 							frame->hasLightMetadata = false;
 							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);

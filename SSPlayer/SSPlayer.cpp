@@ -106,7 +106,7 @@ void SSPlayer::SlotOpenFile()
 				CInputSourceParam param;
 				param.m_strFileName = strFileName.toLocal8Bit().toStdString();
 				m_pInputSourceFilter = new CInputFileSource(param);
-				m_pInputSourceFilter->ConnectFilter(m_pVideoRenderFilter1);
+			//	m_pInputSourceFilter->ConnectFilter(m_pVideoRenderFilter1);
 				m_pInputSourceFilter->ConnectFilter(m_pVideoRenderFilter2);
 				m_pInputSourceFilter->ConnectFilter(m_pAudioRenderFilter);
 				m_pInputSourceFilter->StartService();

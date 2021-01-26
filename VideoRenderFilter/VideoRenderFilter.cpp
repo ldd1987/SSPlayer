@@ -291,6 +291,14 @@ void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries d
 		{
 			m_pixtransform.Primaries[i] = Primaries[i];
 		}
+
+		GetPrimariesTransform(Primaries, m_colPrimariesDst,m_colPrimariesSrc);
+		for (int i = 0; i < 16; i++)
+		{
+			m_pixtransform.DisTransPrimaries[i] = Primaries[i];
+		}
+
+		
 		
 	}
 	bool bRGB = IsRGB(stFrame);
@@ -677,6 +685,10 @@ bool VideoRenderFilter::ReadData()
 	{
 		transfer = AVCOL_TRC_ARIB_STD_B67;
 	}
+	else
+	{
+		transfer = stFrame->color_trc;
+	}
 	int distransfer = m_displayInfo.dxgicolor.transfer;
 	int primaries = m_displayInfo.primaries;
 	if (stFrame->color_primaries == AVCOL_PRI_BT709)
@@ -693,9 +705,9 @@ bool VideoRenderFilter::ReadData()
 	int srcrange = 1;
 
 	XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-	bool bRendToTexture = m_bDirect ? false : true;
+
 	// render to texture
-	if (bRendToTexture)
+	if (!m_bDirect)
 	{
 		m_deviceContext->OMSetRenderTargets(1, &m_renderTextureTargetView, NULL);
 		m_deviceContext->RSSetViewports(1, &viewportframe);
@@ -728,7 +740,6 @@ bool VideoRenderFilter::ReadData()
 		{
 			SetColPrimaries(stFrame->color_primaries, AVCOL_PRI_BT709, stFrame->color_trc, AVCOL_TRC_BT709, stFrame);
 		}
-		
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
 		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
 		m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
@@ -786,14 +797,29 @@ bool VideoRenderFilter::ReadData()
 	viewwindows.m[3][3] = 1.0f;
 	viewMatrix = XMLoadFloat4x4(&viewwindows);
 	m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-	if (false == bRendToTexture)
+	if (false == m_bDirect)
 	{
 		SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
-		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
-		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
-		m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
-		m_pTextSourceA->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[3]);
-		m_pType->SetInt(nType);
+		if (0)
+		{
+			m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
+			m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
+			m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
+			m_pTextSourceA->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[3]);
+			m_pType->SetInt(nType);
+			m_pDrawLine->SetInt(2);
+		}
+		else
+		{
+			m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_textureText);
+			m_pTextSourceU->SetResource(0);
+			m_pTextSourceV->SetResource(0);
+			m_pTextSourceA->SetResource(0);
+			m_pType->SetInt(1);
+			m_pDrawLine->SetInt(0);
+		}
+		
+		
 		m_pSourceHeight->SetInt(stFrame->m_nHeight);
 		m_pSourceWidth->SetInt(stFrame->m_nWidth);
 		m_ptransfer->SetInt(transfer);
@@ -802,7 +828,7 @@ bool VideoRenderFilter::ReadData()
 		m_pdisprimaries->SetInt(disprimaries);
 		m_pfullrange->SetInt(fullrange);
 		m_psrcrange->SetInt(srcrange);
-		m_pDrawLine->SetInt(2);
+		
 		m_deviceContext->IASetInputLayout(m_layout);
 		D3DX11_TECHNIQUE_DESC techDescwindow;
 		m_pTech->GetDesc(&techDescwindow);
@@ -2339,7 +2365,7 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 		tex_desc.Height = stFrame->m_nHeight;
 		tex_desc.MipLevels = 1;
 		tex_desc.ArraySize = 1;
-		tex_desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		tex_desc.Format = stFrame->m_nPixBits == 8 ? DXGI_FORMAT_R8G8B8A8_UNORM :DXGI_FORMAT_R16G16B16A16_FLOAT;
 		tex_desc.SampleDesc.Count = 1;
 		tex_desc.SampleDesc.Quality = 0;
 		tex_desc.Usage = D3D11_USAGE_DEFAULT;;
@@ -2354,7 +2380,7 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 		}
 		D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 		ZeroMemory(&srv_desc, sizeof(srv_desc));
-		srv_desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		srv_desc.Format = 8 ? DXGI_FORMAT_R8G8B8A8_UNORM : DXGI_FORMAT_R16G16B16A16_FLOAT;
 		srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 		srv_desc.Texture2D.MipLevels = 1;
 		srv_desc.Texture2D.MostDetailedMip = 0;

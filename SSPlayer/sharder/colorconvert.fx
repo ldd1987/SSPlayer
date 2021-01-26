@@ -11,6 +11,7 @@ cbuffer PS_COLOR_TRANSFORM
 	float4x4 WhitePoint;
 	float4x4 Colorspace;
 	float4x4 TransPrimaries;
+	float4x4 DisTransPrimaries;
 };
 int PixType;
 int sourcewidth;
@@ -181,6 +182,8 @@ return rgb;
 inline float4 hable(float4 x)
 {
 		const float A = 0.15, B = 0.50, C = 0.10, D = 0.20, E = 0.02, F = 0.30; 
+		/*return ((x * (0.15*x + 0.1*0.5)) + 0.2 * 0.02) / (x *(0.15x + 0.5) + 0.2  *0.3) - 0.02 / 0.3;
+		return (0.15x*x + 0.05x + 0.004) / (0.15x * x + 0.5x + 0.06) - 0.2 / 3;*/
 		return ((x * (A*x + (C*B)) + (D*E)) / (x * (A*x + B) + (D*F))) - E / F;
 }
 
@@ -188,6 +191,24 @@ float4 HDRToneMapping(float4 rgb)
 {
 	float4 HABLE_DIV = hable(11.2);
 	float4 rgba = hable(rgb* LuminanceScale) / HABLE_DIV;
+	return rgba;
+}
+
+//float4 invertoneMapping(float4 rgb)
+//{
+//	float4 HABLE_DIV = hable(11.2);
+//	rgb = rgb * HABLE_DIV;
+//	rgb = rgb * 0.2 / 3;
+//	// (0.15 - rgb * 0.15) x *x + (0.05 - 0.5*rgb)x + 0.004 - 0.06*rgb = 0;
+//
+//	rgb = (0.5rgb - 0.05 + sqrt(pow((0.05 - 0.5*rgb), 2) - 4 * (0.15 - rgb * 0.15) * (0.004 - 0.06*rgb))) / (2 * ((0.15 - rgb * 0.15)));
+//	
+//}
+
+float4 HDRToneMapping2(float4 rgb)
+{
+	float4 HABLE_DIV = hable(11.2);
+	float4 rgba = hable(rgb* 1) / HABLE_DIV;
 	return rgba;
 }
 
@@ -316,12 +337,7 @@ float4 RenderFloat(float4 rgb)
 	}
 	else if (DrawLine == 1)
 	{
-		rgb = sourceToLinear(rgb);
-		rgb = transformPrimaries(rgb);
-		rgb = toneMapping(rgb);
-		rgb = linearToDisplay(rgb);
-		rgb = adjustRange(rgb);
-		rgb = reorderPlanes(rgb);
+		
 	}
 	else
 	{
@@ -348,6 +364,7 @@ inline float4 GetRGBA(VS_OUTPUT input)
 		float4 rgba = PSPacked422_Reverse(input, 3, 1, 2, 0);
 		float4 rgbasub = rgba - bt709yuv;
 		float4 rgbarsp = mul(rgbasub, yuv2rgbmatrix);
+		float4 rr = mul(rgba, WhitePoint);
 		rgbarsp = RenderFloat(rgbarsp);
 		rgbarsp.a = 1;
 		return rgbarsp;
@@ -404,7 +421,6 @@ inline float4 GetRGBA(VS_OUTPUT input)
 		float4 rgbasub = rgba;// -bt709yuv;
 		float4 rr = mul(rgba, WhitePoint);
 		float4 rgbarsp = max(mul(rr, yuv2rgbmatrix), 0);
-		rgbarsp = RenderFloat(rgbarsp);
 		rgbarsp.a = 1;
 		return rgbarsp;
 	}

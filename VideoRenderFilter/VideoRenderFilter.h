@@ -43,6 +43,7 @@ typedef struct {
 	FLOAT WhitePoint[4 * 4];
 	FLOAT Colorspace[4 * 4];
 	FLOAT Primaries[4 * 4];
+	FLOAT DisTransPrimaries[4 * 4];
 } PS_COLOR_TRANSFORM;
  struct video_render_cfg_t
 {
@@ -61,7 +62,7 @@ typedef struct {
 class  VideoRenderFilter : public CSSFilter
 {
 public:
-	VideoRenderFilter(QWidget*  parent, std::string &strName, bool bdirect= true);
+	VideoRenderFilter(QWidget*  parent, std::string &strName, bool bpgm= true);
 	virtual ~VideoRenderFilter();
 	virtual int InputData(CFrameSharePtr &frame);
 	static DWORD WINAPI  SyncRead(LPVOID arg);
