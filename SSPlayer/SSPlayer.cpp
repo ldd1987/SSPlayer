@@ -7,27 +7,37 @@
 #include "../AudioRenderFilter/AudioRenderFilter.h"
 #include "../Common/SSLogger.h"
 #include "../Common/Helpers.h"
+#include "../Common/SSMainConfiguration.h"
+SSMainConfiguration * g_pstMainConfig = NULL;
+
 SSPlayer::SSPlayer(QWidget *parent)
 	: QMainWindow(parent)
 {
+	g_pstMainConfig = new SSMainConfiguration();
 	initLoggingSystem(__argc, __argv);
 	timeBeginPeriod(1);
 	ui.setupUi(this);
 	ui.widget->setFixedSize(640, 360);
-	ui.widget->move(0, 0);
+	ui.widget->move(640, 0);
 	ui.widget->show();
 	ui.widget_2->setFixedSize(640, 360);
-	ui.widget_2->move(640 + 20, 0);
+	ui.widget_2->move(20,400);
 	ui.widget_2->show();
+	ui.widget_3->setFixedSize(640, 360);
+	ui.widget_3->move(40 + 640, 400);
+	ui.widget_3->show();
 	std::string strName = "dx11-render";
-	m_pVideoRenderFilter1 = new VideoRenderFilter(ui.widget, strName, true);
+	m_pVideoRenderFilter[0] = new VideoRenderFilter(0,ui.widget, strName, true);
 
 	std::string strName1 = "dx11-render2";
-	m_pVideoRenderFilter2 = new VideoRenderFilter(ui.widget_2, strName1, false);
+	m_pVideoRenderFilter[1] = new VideoRenderFilter(1,ui.widget_2, strName1, false);
+	std::string strName2 = "dx11-render3";
+	m_pVideoRenderFilter[2] = new VideoRenderFilter(2, ui.widget_3, strName2, false);
 
 	strName = "audio-render";
 	m_pAudioRenderFilter = new AudioRenderFilter(strName);
-	m_pInputSourceFilter = 0;
+	m_pInputSourceFilter[0] = 0;
+	m_pInputSourceFilter[1] = 0;
 	m_pVedioFileInputAct = ui.openfile;
 	connect(m_pVedioFileInputAct, SIGNAL(triggered()), this, SLOT(SlotOpenFile()));
 	setContextMenuPolicy(Qt::CustomContextMenu);
@@ -98,18 +108,19 @@ void SSPlayer::SlotOpenFile()
 		
 			if (!strFileName.isEmpty())
 			{
-				if (m_pInputSourceFilter)
+				int index = (m_nIndex++) % 2 + 1;
+				if (m_pInputSourceFilter[index-1])
 				{
-					m_pInputSourceFilter->StopService();
-					delete m_pInputSourceFilter;
+					m_pInputSourceFilter[index - 1]->StopService();
+					delete m_pInputSourceFilter[index - 1];
 				}
 				CInputSourceParam param;
 				param.m_strFileName = strFileName.toLocal8Bit().toStdString();
-				m_pInputSourceFilter = new CInputFileSource(param);
-			//	m_pInputSourceFilter->ConnectFilter(m_pVideoRenderFilter1);
-				m_pInputSourceFilter->ConnectFilter(m_pVideoRenderFilter2);
-				m_pInputSourceFilter->ConnectFilter(m_pAudioRenderFilter);
-				m_pInputSourceFilter->StartService();
+				m_pInputSourceFilter[index - 1] = new CInputFileSource(param);
+				
+				m_pInputSourceFilter[index - 1]->ConnectFilter(m_pVideoRenderFilter[index]);
+				m_pInputSourceFilter[index - 1]->ConnectFilter(m_pAudioRenderFilter);
+				m_pInputSourceFilter[index - 1]->StartService();
 			}
 	}
 	else

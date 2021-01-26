@@ -98,6 +98,7 @@
     <ClInclude Include="Helpers.h" />
     <ClInclude Include="MediaTimer.h" />
     <ClInclude Include="SSLogger.h" />
+    <ClInclude Include="SSMainConfiguration.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="waveout_output_win.h" />
   </ItemGroup>
@@ -107,6 +108,7 @@
     <ClCompile Include="Helpers.cpp" />
     <ClCompile Include="MediaTimer.cpp" />
     <ClCompile Include="SSLogger.cpp" />
+    <ClCompile Include="SSMainConfiguration.cpp" />
     <ClCompile Include="utils.cpp" />
     <ClCompile Include="waveout_output_win.cc" />
   </ItemGroup>

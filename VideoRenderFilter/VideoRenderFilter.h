@@ -62,7 +62,7 @@ typedef struct {
 class  VideoRenderFilter : public CSSFilter
 {
 public:
-	VideoRenderFilter(QWidget*  parent, std::string &strName, bool bpgm= true);
+	VideoRenderFilter(long index,QWidget*  parent, std::string &strName, bool bpgm= true);
 	virtual ~VideoRenderFilter();
 	virtual int InputData(CFrameSharePtr &frame);
 	static DWORD WINAPI  SyncRead(LPVOID arg);
@@ -70,6 +70,8 @@ public:
 	void UpdateBackBuffer();
 	void RenderToWindow(bool bDirect);
 	bool ReadData();
+	bool ReadDataPGM();
+	bool UpdateBuffersEx(ID3D11Buffer* verbuffer, int nLastWidth, int nLastHeight, CD3D11_RECT dest);
 	void SetSwapchainSetMetadata(CFrameSharePtr &stFrame);
 	void SelectSwapchainColorspace();
 	bool ReadFrameDataToTexture(CFrameSharePtr &stFrame);
@@ -109,6 +111,7 @@ private:
 	// ‰÷»æµΩŒ∆¿Ì
 	ID3D11RenderTargetView* m_renderTextureTargetView;
 	ID3D11Texture2D *m_texture2dText;
+	ID3D11Texture2D *m_texture2dShared=0;
 	ID3D11ShaderResourceView* m_textureText;
 
 	ID3D11Texture2D *m_pSourceTexture2d[MAXPLANE];
@@ -165,4 +168,8 @@ private:
 	DXGI_FORMAT  m_dstBufferDXFormat;
 	DXGI_FORMAT  m_dstRenderDXFormat;
 	bool m_bDirect;
+	long m_nIndex;
+	HANDLE m_hSrcHandle[3];
+	ID3D11Texture2D *m_texture2dpip[3];
+	ID3D11ShaderResourceView *m_texturepip[3];
 };
