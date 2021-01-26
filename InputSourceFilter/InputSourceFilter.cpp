@@ -535,6 +535,7 @@ void CInputFileSource::DecoderVideo()
 							stFrame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
 							stFrame->hasDisplayMetadata = false;
 							stFrame->hasLightMetadata = false;
+							stFrame->m_nPixBits = 10;
 							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
 							if (sd)
 							{

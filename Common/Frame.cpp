@@ -27,6 +27,7 @@ CFrame::CFrame(CFrame&frame)
 	m_nTimesTamp = frame.m_nTimesTamp;
 	m_nBitPerSample = frame.m_nBitPerSample;
 	m_nShowTime = frame.m_nShowTime;
+	m_nPixBits = frame.m_nPixBits;
 }
 CFrame::~CFrame()
 {

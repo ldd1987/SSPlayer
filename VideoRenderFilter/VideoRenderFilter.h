@@ -91,7 +91,7 @@ public:
 	bool UpdateBuffers(ID3D11Buffer*, int, int, int, int);
 	void RenderBuffers(ID3D11Buffer*);
 	std::vector< DXFormatInfo> GetDXFormat(CFrameSharePtr &stFrame);
-	void SetColPrimaries(AVColorPrimaries dst, AVColorPrimaries src , AVColorTransferCharacteristic srctranfunc, AVColorTransferCharacteristic dsttranfunc, CFrameSharePtr &stFrame);
+	void SetColPrimaries(AVColorPrimaries dst, AVColorPrimaries src , AVColorTransferCharacteristic srctranfunc, AVColorTransferCharacteristic dsttranfunc, CFrameSharePtr &stFrame, bool b = false);
 private:
 	QWidget * m_pWidget;
 	ID3D11Device* m_device;

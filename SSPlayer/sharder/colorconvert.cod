@@ -143,7 +143,7 @@ fxgroup
                 //   o1.x <- <VS return value>.TexCoord.x; o1.y <- <VS return value>.TexCoord.y; 
                 //   o0.x <- <VS return value>.Pos.x; o0.y <- <VS return value>.Pos.y; o0.z <- <VS return value>.Pos.z; o0.w <- <VS return value>.Pos.w
                 //
-                #line 47 "E:\svn\SSPlayer.git\trunk\SSPlayer\sharder\colorconvert.fx"
+                #line 47 "C:\github\sinx\SSPlayer\SSPlayer\sharder\colorconvert.fx"
                 mov r0.w, l(1.000000)  // r0.w <- inPos.w
                 
                 #line 51
@@ -263,7 +263,7 @@ fxgroup
                 //   v1.x <- input.TexCoord.x; v1.y <- input.TexCoord.y; 
                 //   o0.x <- <PS return value>.x; o0.y <- <PS return value>.y; o0.z <- <PS return value>.z; o0.w <- <PS return value>.w
                 //
-                #line 503 "E:\svn\SSPlayer.git\trunk\SSPlayer\sharder\colorconvert.fx"
+                #line 503 "C:\github\sinx\SSPlayer\SSPlayer\sharder\colorconvert.fx"
                 nop 
                 
                 #line 430
