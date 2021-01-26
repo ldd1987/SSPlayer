@@ -337,7 +337,17 @@ float4 RenderFloat(float4 rgb)
 	}
 	else if (DrawLine == 1)
 	{
-		
+		if (primaries != disprimaries)
+		{
+			rgb = sourceToLinear(rgb);
+			rgb =  PrimariesTransform(rgb, primaries);
+			rgb = linearToDisplay(rgb);
+			return rgb;
+		}
+		else
+		{
+			return rgb;
+		}
 	}
 	else
 	{

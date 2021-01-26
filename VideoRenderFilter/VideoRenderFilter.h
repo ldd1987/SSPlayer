@@ -162,6 +162,7 @@ private:
 	AVColorPrimaries m_colPrimariesDst;
 	AVColorPrimaries m_colPrimariesSrc;
 	Primaries m_pMatPrim;
-	DXGI_FORMAT  m_dstDXFormat;
+	DXGI_FORMAT  m_dstBufferDXFormat;
+	DXGI_FORMAT  m_dstRenderDXFormat;
 	bool m_bDirect;
 };

@@ -559,7 +559,7 @@ void VideoRenderFilter::UpdateBackBuffer()
 			texure2d->GetDesc(&dsc);
 			res->Release();
 		}
-		if (dsc.Width == m_nTextureWidth && dsc.Height == m_nTextureHeight && dsc.Format== m_dstDXFormat)
+		if (dsc.Width == m_nTextureWidth && dsc.Height == m_nTextureHeight && dsc.Format== m_dstBufferDXFormat)
 		{
 			break;
 		}
@@ -570,7 +570,7 @@ void VideoRenderFilter::UpdateBackBuffer()
 			m_renderTargetView->Release();
 			m_renderTargetView = NULL;
 		}
-		HRESULT result = m_swapChain->ResizeBuffers(0, m_nTextureWidth, m_nTextureHeight, m_dstDXFormat, 0);
+		HRESULT result = m_swapChain->ResizeBuffers(0, m_nTextureWidth, m_nTextureHeight, m_dstBufferDXFormat, 0);
 		// Get the pointer to the back buffer.
 		result = m_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBufferPtr);
 		if (FAILED(result))
@@ -732,7 +732,7 @@ bool VideoRenderFilter::ReadData()
 		view.m[3][3] = 1.0f;
 		viewMatrix = XMLoadFloat4x4(&view);
 		m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-		if (m_dstDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+		if (m_dstRenderDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 		{
 			SetColPrimaries(stFrame->color_primaries, AVCOL_PRI_BT2020, stFrame->color_trc, AVCOL_TRC_SMPTE2084, stFrame);
 		}
@@ -845,7 +845,7 @@ bool VideoRenderFilter::ReadData()
 		m_pTextSourceV->SetResource(0);
 		m_pTextSourceA->SetResource(0);
 		m_pType->SetInt(1);
-		if (m_dstDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+		if (m_dstRenderDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 		{
 			m_ptransfer->SetInt(AVCOL_TRC_SMPTEST2084);
 			m_pprimaries->SetInt(AVCOL_PRI_BT2020);
@@ -1427,7 +1427,8 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 	m_displayInfo.transfer = AVCOL_TRC_SMPTEST2084;
 	std::lock_guard<std::mutex> stLock(m_stD3DLock);
 	UINT createDeviceFlags = 0;
-	m_dstDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	m_dstRenderDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	m_dstBufferDXFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 #ifdef _DEBUG
 	//createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
@@ -1455,7 +1456,7 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 		int kkk = 0;
 	}
 	
-	DXGI_FORMAT format = DXGI_FORMAT_R8G8B8A8_UNORM;//DXGI_FORMAT_R8G8B8A8_UNORM
+	DXGI_FORMAT format = m_dstBufferDXFormat;//DXGI_FORMAT_R8G8B8A8_UNORM
 	DXGI_SWAP_CHAIN_DESC1 out;
 	memset(&out, 0, sizeof(out));
 	out.BufferCount = 3;
@@ -1547,11 +1548,11 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 	SelectSwapchainColorspace();
 	if (m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
 	{
-		m_dstDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		m_dstBufferDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 	}
 	else
 	{
-		m_dstDXFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+		m_dstBufferDXFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 	}
 	ID3D11Texture2D* backBufferPtr = NULL;
 	// Get the pointer to the back buffer.
@@ -2365,7 +2366,7 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 		tex_desc.Height = stFrame->m_nHeight;
 		tex_desc.MipLevels = 1;
 		tex_desc.ArraySize = 1;
-		tex_desc.Format = stFrame->m_nPixBits == 8 ? DXGI_FORMAT_R8G8B8A8_UNORM :DXGI_FORMAT_R16G16B16A16_FLOAT;
+		tex_desc.Format = m_dstRenderDXFormat;
 		tex_desc.SampleDesc.Count = 1;
 		tex_desc.SampleDesc.Quality = 0;
 		tex_desc.Usage = D3D11_USAGE_DEFAULT;;
@@ -2380,7 +2381,7 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 		}
 		D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 		ZeroMemory(&srv_desc, sizeof(srv_desc));
-		srv_desc.Format = 8 ? DXGI_FORMAT_R8G8B8A8_UNORM : DXGI_FORMAT_R16G16B16A16_FLOAT;
+		srv_desc.Format = m_dstRenderDXFormat;
 		srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 		srv_desc.Texture2D.MipLevels = 1;
 		srv_desc.Texture2D.MostDetailedMip = 0;
