@@ -734,11 +734,15 @@ bool VideoRenderFilter::ReadData()
 		m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
 		if (m_dstRenderDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 		{
-			SetColPrimaries(stFrame->color_primaries, AVCOL_PRI_BT2020, stFrame->color_trc, AVCOL_TRC_SMPTE2084, stFrame);
+			SetColPrimaries(stFrame->color_primaries, stFrame->color_primaries, stFrame->color_trc, stFrame->color_trc, stFrame);
+			m_pdistransfer->SetInt(AVCOL_TRC_SMPTE2084);
+			m_pdisprimaries->SetInt(AVCOL_PRI_BT2020);
 		}
 		else
 		{
-			SetColPrimaries(stFrame->color_primaries, AVCOL_PRI_BT709, stFrame->color_trc, AVCOL_TRC_BT709, stFrame);
+			SetColPrimaries(stFrame->color_primaries, stFrame->color_primaries, stFrame->color_trc, stFrame->color_trc, stFrame);
+			m_pdistransfer->SetInt(AVCOL_TRC_BT709);
+			m_pdisprimaries->SetInt(AVCOL_PRI_BT709);
 		}
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
 		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
@@ -748,9 +752,7 @@ bool VideoRenderFilter::ReadData()
 		m_pSourceHeight->SetInt(stFrame->m_nHeight);
 		m_pSourceWidth->SetInt(stFrame->m_nWidth);
 		m_ptransfer->SetInt(transfer);
-		m_pdistransfer->SetInt(AVCOL_TRC_BT709);
 		m_pprimaries->SetInt(primaries);
-		m_pdisprimaries->SetInt(AVCOL_PRI_BT709);
 		m_pfullrange->SetInt(fullrange);
 		m_psrcrange->SetInt(srcrange);
 		m_pDrawLine->SetInt(1);
@@ -799,7 +801,19 @@ bool VideoRenderFilter::ReadData()
 	m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
 	if (false == m_bDirect)
 	{
-		SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
+		if (m_dstRenderDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
+		{
+			SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
+			m_ptransfer->SetInt(stFrame->color_trc);
+			m_pprimaries->SetInt(stFrame->color_primaries);
+		}
+		else
+		{
+			SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
+			m_ptransfer->SetInt(stFrame->color_trc);
+			m_pprimaries->SetInt(stFrame->color_primaries);
+		}
+		
 		if (0)
 		{
 			m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
@@ -822,9 +836,7 @@ bool VideoRenderFilter::ReadData()
 		
 		m_pSourceHeight->SetInt(stFrame->m_nHeight);
 		m_pSourceWidth->SetInt(stFrame->m_nWidth);
-		m_ptransfer->SetInt(transfer);
 		m_pdistransfer->SetInt(distransfer);
-		m_pprimaries->SetInt(primaries);
 		m_pdisprimaries->SetInt(disprimaries);
 		m_pfullrange->SetInt(fullrange);
 		m_psrcrange->SetInt(srcrange);
@@ -2360,6 +2372,14 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 			m_renderTextureTargetView = NULL;
 		}
 
+		if (stFrame->m_nPixBits == 8)
+		{
+			m_dstRenderDXFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+		}
+		else
+		{
+			m_dstRenderDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		}
 		D3D11_TEXTURE2D_DESC tex_desc;
 		ZeroMemory(&tex_desc, sizeof(tex_desc));
 		tex_desc.Width = stFrame->m_nWidth;

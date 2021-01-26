@@ -173,7 +173,7 @@ const float ST2084_m2 = (2523.0 / 4096.0) * 128.0;
 const float ST2084_c1 = 3424.0 / 4096.0;
 const float ST2084_c2 = (2413.0 / 4096.0) * 32.0;
 const float ST2084_c3 = (2392.0 / 4096.0) * 32.0;
-rgb = pow(rgb / 1000, ST2084_m1);
+rgb = pow(rgb / 10000, ST2084_m1);
 rgb = (ST2084_c1 + ST2084_c2 * rgb) / (1 + ST2084_c3 * rgb);
 rgb = pow(rgb, ST2084_m2);
 return rgb;
@@ -214,7 +214,11 @@ float4 HDRToneMapping2(float4 rgb)
 
 float4 sourceToLinear(float4 rgb)
 {
-	if (transfer == 8)  //line 
+	if (transfer == distransfer)
+	{
+		return rgb;
+	}
+	else if (transfer == 8)  //line 
 	{
 		return rgb;
 	}
@@ -249,6 +253,44 @@ float4 sourceToLinear(float4 rgb)
 	
 	
 }
+
+float4 sourceToLinear2(float4 rgb)
+{
+	if (transfer == 8)  //line 
+	{
+		return rgb;
+	}
+	else if (transfer == 16) // pq
+	{
+		return ST2084TOLinear(rgb);
+	}
+	else if (transfer == 18) // hlg
+	{
+		return HLGTOLinear(rgb);
+	}
+	else if (transfer == 1) // bt709
+	{
+		return BT709TOLinear(rgb);
+	}
+	else if (transfer == 4)
+	{
+		return BT470M_SRGB_TOLinear(rgb);
+	}
+	else if (transfer == 5)
+	{
+		return BT470BGTOLinear(rgb);
+	}
+	/*else if (transfer == 1)
+	{
+
+	}*/
+	else
+	{
+		return rgb;
+	}
+
+
+}
 float4 PrimariesTransform(float4 rgb, int type)
 {
 	return max(mul(rgb, TransPrimaries), 0);
@@ -268,24 +310,24 @@ float4 transformPrimaries(float4 rgb)
 
 float4 toneMapping(float4 rgb)
 {
+	if (distransfer == transfer)
+	{
+		return rgb;
+	}
 	if (distransfer == 1 || distransfer == 4)
 	{
 		if (transfer == 16 || transfer == 18)
 		{
 			return HDRToneMapping(rgb);
 		}
-		else if (transfer == 8 && primaries == 9)
-		{
-			return HDRToneMapping(rgb);
-		}
 		else
 		{
-			return rgb;
+			return rgb * LuminanceScale;
 		}
 	}
 	else
 	{
-		return rgb;
+		return rgb * LuminanceScale;
 	}
 
 }
@@ -296,6 +338,33 @@ float4 adjustRange(float4 rgb)
 }
 
 float4 linearToDisplay(float4 rgb)
+{
+	if (distransfer == transfer)
+	{
+		return  rgb;
+	}
+	else if (distransfer == 16)
+	{
+		return LineTOST2084(rgb);
+	}
+	else if (distransfer == 18)
+	{
+		return LineTOST2084(rgb);
+	}
+	else if (distransfer == 1)
+	{
+		return pow(rgb, 1.0 / 2.2);
+	}
+	else if (distransfer == 4)
+	{
+		return pow(rgb, 1.0 / 2.2);
+	}
+	else
+	{
+		return rgb;
+	}
+}
+float4 linearToDisplay2(float4 rgb)
 {
 	if (distransfer == 16)
 	{
@@ -337,17 +406,7 @@ float4 RenderFloat(float4 rgb)
 	}
 	else if (DrawLine == 1)
 	{
-		if (primaries != disprimaries)
-		{
-			rgb = sourceToLinear(rgb);
-			rgb =  PrimariesTransform(rgb, primaries);
-			rgb = linearToDisplay(rgb);
-			return rgb;
-		}
-		else
-		{
-			return rgb;
-		}
+		
 	}
 	else
 	{
