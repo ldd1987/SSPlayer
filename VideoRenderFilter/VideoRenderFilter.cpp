@@ -928,6 +928,7 @@ bool VideoRenderFilter::ReadDataPGM()
 				m_device->CreateShaderResourceView(m_texture2dpip[i], &srv_desc, &m_texturepip[i]);
 			}
 			CD3D11_RECT dst = CD3D11_RECT((i - 1) * 200, 0, (i - 1) * 200 + 200, 0 + 100);
+			dst = CD3D11_RECT(0, 0, stFrame->m_nWidth, stFrame->m_nHeight);
 			bool result = UpdateBuffersEx(m_vertexBufferSource, info.m_nHeight, info.m_nHeight, dst);
 			
 			RenderBuffers(m_vertexBufferSource);

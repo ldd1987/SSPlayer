@@ -45,13 +45,7 @@ VS_OUTPUT VS(float4 inPos : POSITION, float2 inTexCoord : TEXCOORD)
 {
 	VS_OUTPUT output;
 	inPos.w = 1.0f;
-
-	// Calculate the position of the vertex against the world, view, and projection matrices.
-//	output.Pos = mul(inPos, worldMatrix);
 	output.Pos = mul(inPos, viewMatrix);
-//	output.Pos = mul(output.Pos, projectionMatrix);
-	//output.Pos = inPos;
-	// Store the texture coordinates for the pixel shader.
 	output.TexCoord = inTexCoord;
 	return output;
 }
@@ -182,8 +176,6 @@ return rgb;
 inline float4 hable(float4 x)
 {
 		const float A = 0.15, B = 0.50, C = 0.10, D = 0.20, E = 0.02, F = 0.30; 
-		/*return ((x * (0.15*x + 0.1*0.5)) + 0.2 * 0.02) / (x *(0.15x + 0.5) + 0.2  *0.3) - 0.02 / 0.3;
-		return (0.15x*x + 0.05x + 0.004) / (0.15x * x + 0.5x + 0.06) - 0.2 / 3;*/
 		return ((x * (A*x + (C*B)) + (D*E)) / (x * (A*x + B) + (D*F))) - E / F;
 }
 
@@ -191,24 +183,6 @@ float4 HDRToneMapping(float4 rgb)
 {
 	float4 HABLE_DIV = hable(11.2);
 	float4 rgba = hable(rgb* LuminanceScale) / HABLE_DIV;
-	return rgba;
-}
-
-//float4 invertoneMapping(float4 rgb)
-//{
-//	float4 HABLE_DIV = hable(11.2);
-//	rgb = rgb * HABLE_DIV;
-//	rgb = rgb * 0.2 / 3;
-//	// (0.15 - rgb * 0.15) x *x + (0.05 - 0.5*rgb)x + 0.004 - 0.06*rgb = 0;
-//
-//	rgb = (0.5rgb - 0.05 + sqrt(pow((0.05 - 0.5*rgb), 2) - 4 * (0.15 - rgb * 0.15) * (0.004 - 0.06*rgb))) / (2 * ((0.15 - rgb * 0.15)));
-//	
-//}
-
-float4 HDRToneMapping2(float4 rgb)
-{
-	float4 HABLE_DIV = hable(11.2);
-	float4 rgba = hable(rgb* 1) / HABLE_DIV;
 	return rgba;
 }
 
@@ -469,6 +443,7 @@ inline float4 GetRGBA(VS_OUTPUT input)
 	else if (1 == PixType) // bgra
 	{
 		float4 rgba = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord);
+		rgba.a = 0;
 		rgba = RenderFloat(rgba);
 		return rgba;
 	}
