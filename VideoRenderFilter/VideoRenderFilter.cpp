@@ -1380,11 +1380,6 @@ void VideoRenderFilter::SelectSwapchainColorspace()
 			}
 		}
 	}
-	bool b = true;
-	if (color_spaces[best].primaries == SSMainConfiguration::instance().disprimaries)
-	{
-		b = false;
-	}
 	IDXGIOutput *dxgiOutput = NULL;
 	if (SUCCEEDED(m_swapChain->GetContainingOutput( &dxgiOutput)))
 	{
@@ -1412,7 +1407,7 @@ void VideoRenderFilter::SelectSwapchainColorspace()
 						}
 						else
 						{
-							if (b)
+					
 							{
 								best = i;
 								csp = &color_spaces[i];
@@ -1452,7 +1447,7 @@ done:
 
 bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 {
-	if (SSMainConfiguration::instance().disprimaries == AVCOL_PRI_BT709)
+	if (SSMainConfiguration::instance().disprimaries == AVCOL_PRI_BT2020)
 	{
 		m_displayInfo.bitdepth = 10;
 		m_displayInfo.colorspace = AVCOL_SPC_BT2020_NCL;
