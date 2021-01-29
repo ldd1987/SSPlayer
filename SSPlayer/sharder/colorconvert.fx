@@ -119,6 +119,16 @@ inline float inverse_HLG(float x)
 			return x; 
 }
 
+inline float LineToHLG(float Lc)
+{
+	const double a = 0.17883277;
+	const double b = 0.28466892;
+	const double c = 0.55991073;
+	return (0.0 > Lc) ? 0.0 :
+		(Lc <= 1.0 / 12.0 ? sqrt(3.0 * Lc) : a * log(12.0 * Lc - b) + c);
+}
+
+
 float4 ST2084TOLinear(float4 rgb)
 {
 const float ST2084_m1 = 2610.0 / (4096.0 * 4);
