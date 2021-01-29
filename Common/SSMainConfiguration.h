@@ -78,9 +78,11 @@ public:
 public:
 	QMutex m_TextureMutex;
 	QMap< long long, CChannelD3DTextureInfo >  m_deqChannelTextureInfo;
-private:
+
 	int m_iPGMIndex;
 	int m_iPVMIndex;
+	AVColorPrimaries disprimaries;
+	AVColorTransferCharacteristic rendertransfer;
 	
 };
 

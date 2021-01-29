@@ -4,6 +4,7 @@
 #include "../Common/Helpers.h"
 #include "ConversionMatrix.h"
 #include "../Common/SSMainConfiguration.h"
+#include "../Common/SSLogger.h"
 struct VertexType
 {
 	XMFLOAT3 position;
@@ -15,8 +16,8 @@ struct MatrixBufferType
 	XMMATRIX view;
 	XMMATRIX projection;
 };
-#define DEFAULT_BRIGHTNESS         200
-#define DEFAULT_SRGB_BRIGHTNESS    200
+#define DEFAULT_BRIGHTNESS         100
+#define DEFAULT_SRGB_BRIGHTNESS    100
 #define MAX_HLG_BRIGHTNESS        1000
 #define MAX_PQ_BRIGHTNESS        10000
 dxgi_color_space color_spaces[]=
@@ -293,11 +294,11 @@ void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries d
 			m_pixtransform.Primaries[i] = Primaries[i];
 		}
 
-		GetPrimariesTransform(Primaries, m_colPrimariesDst,m_colPrimariesSrc);
+		/*GetPrimariesTransform(Primaries, m_colPrimariesDst,m_colPrimariesSrc);
 		for (int i = 0; i < 16; i++)
 		{
 			m_pixtransform.DisTransPrimaries[i] = Primaries[i];
-		}
+		}*/
 
 		
 		
@@ -814,7 +815,15 @@ bool VideoRenderFilter::ReadData()
 		}
 		else
 		{
-			SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
+			if (m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
+			{
+				SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame, true);
+			}
+			else
+			{
+				SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
+			}
+			
 			m_ptransfer->SetInt(stFrame->color_trc);
 			m_pprimaries->SetInt(stFrame->color_primaries);
 		}
@@ -885,10 +894,11 @@ bool VideoRenderFilter::ReadDataPGM()
 	int srcrange = 1;
 
 	XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-
+	AVColorTransferCharacteristic rendertranfer = SSMainConfiguration::instance().rendertransfer;
 	// render to texture
 	if (m_bDirect)
 	{
+		
 		m_deviceContext->OMSetRenderTargets(1, &m_renderTextureTargetView, NULL);
 		m_deviceContext->RSSetViewports(1, &viewportframe);
 		BeginScene(0.0f, 0.0f, 0.0f, 1.0f, m_renderTextureTargetView, NULL);
@@ -953,8 +963,13 @@ bool VideoRenderFilter::ReadDataPGM()
 			m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
 			if (m_dstRenderDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 			{
-				SetColPrimaries(info.primaries, AVCOL_PRI_BT2020, info.transfer, AVCOL_TRC_SMPTE2084, stFrame, true);
-				m_pdistransfer->SetInt(AVCOL_TRC_SMPTE2084);
+				bool b = false;
+				if (rendertranfer == AVCOL_TRC_SMPTE2084)
+				{
+					b = true;
+				}
+				SetColPrimaries(info.primaries, AVCOL_PRI_BT2020, info.transfer, rendertranfer, stFrame, b);
+				m_pdistransfer->SetInt(rendertranfer);
 				m_pdisprimaries->SetInt(AVCOL_PRI_BT2020);
 			}
 			else
@@ -1028,9 +1043,9 @@ bool VideoRenderFilter::ReadDataPGM()
 		m_pType->SetInt(1);
 		if (m_dstRenderDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
 		{
-			m_ptransfer->SetInt(AVCOL_TRC_SMPTEST2084);
+			m_ptransfer->SetInt(int(rendertranfer));
 			m_pprimaries->SetInt(AVCOL_PRI_BT2020);
-			SetColPrimaries(AVCOL_PRI_BT2020, m_displayInfo.dxgicolor.primaries, AVCOL_TRC_SMPTE2084, m_displayInfo.dxgicolor.transfer, stFrame);
+			SetColPrimaries(AVCOL_PRI_BT2020, m_displayInfo.dxgicolor.primaries, rendertranfer, m_displayInfo.dxgicolor.transfer, stFrame);
 		}
 		else
 		{
@@ -1109,198 +1124,6 @@ DWORD WINAPI VideoRenderFilter::SyncRead(LPVOID arg)
 		}
 	}
 	return 0;
-}
-
-HRESULT VideoRenderFilter::create_swapchain_1_2(ID3D11Device *dev, IDXGIFactory2 *factory, bool flip, DXGI_FORMAT format, IDXGISwapChain **swapchain_out)
-{
-	IDXGISwapChain *swapchain = NULL;
-	IDXGISwapChain1 *swapchain1 = NULL;
-	HRESULT hr;
-	do
-	{
-		DXGI_SWAP_CHAIN_DESC1 swapChainDesc;
-		ZeroMemory(&swapChainDesc, sizeof(swapChainDesc));
-		// Set to a single back buffer.
-		swapChainDesc.BufferCount = 1;
-		// Set the width and height of the back buffer.
-		swapChainDesc.Width = m_nTextureWidth;
-		swapChainDesc.Height = m_nTextureHeight;
-		// Set regular 32-bit surface for the back buffer.
-		swapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-		// Set the usage of the back buffer.
-		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		// Set the handle for the window to render to.
-		// Turn multisampling off.
-		swapChainDesc.SampleDesc.Count = 1;
-		swapChainDesc.SampleDesc.Quality = 0;
-		// Discard the back buffer contents after presenting.
-		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-		// Don't set the advanced flags.
-		swapChainDesc.Flags = 0;
-		if (flip)
-		{
-			swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-			swapChainDesc.BufferCount = 3;
-		}
-		else
-		{
-			swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-			swapChainDesc.BufferCount = 1;
-		}
-
-		hr = factory->CreateSwapChainForHwnd((IUnknown*)dev,
-			(HWND)m_pWidget->winId(), &swapChainDesc, NULL, NULL, &swapchain1);
-		if (FAILED(hr))
-			break;
-		hr = swapchain1->QueryInterface(IID_IDXGISwapChain,
-			(void**)&swapchain);
-		if (FAILED(hr))
-			break;
-		*swapchain_out = swapchain;
-		swapchain = NULL;
-	} while (0);
-
-	if (swapchain1)
-	{
-		swapchain1->Release();
-		swapchain1 = NULL;
-	}
-	if (swapchain)
-	{
-		swapchain->Release();
-		swapchain = NULL;
-	}
-	return hr;
-}
-
-HRESULT VideoRenderFilter::create_swapchain_1_1(ID3D11Device *dev, IDXGIFactory1 *factory, bool flip, DXGI_FORMAT format, IDXGISwapChain **swapchain_out)
-{
-	DXGI_SWAP_CHAIN_DESC desc;
-	memset(&desc, 0, sizeof(desc));
-	desc.BufferDesc.Width = m_nTextureWidth;
-	desc.BufferDesc.Height = m_nTextureHeight;
-	desc.BufferDesc.Format = format;
-	desc.SampleDesc.Count = 1;
-	desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	desc.BufferCount = 1;
-	desc.OutputWindow = (HWND)m_pWidget->winId();
-	desc.Windowed = TRUE;
-	desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-	return factory->CreateSwapChain((IUnknown*)dev, &desc, swapchain_out);
-}
-
-bool VideoRenderFilter::d3d11_create_swapchain(ID3D11Device *dev, IDXGISwapChain **swapchain_out)
-{
-	IDXGIDevice1 *dxgi_dev = NULL;
-	IDXGIAdapter1 *adapter = NULL;
-	IDXGIFactory1 *factory = NULL;
-	IDXGIFactory2 *factory2 = NULL;
-	IDXGISwapChain *swapchain = NULL;
-	bool success = false;
-	HRESULT hr;
-	do
-	{
-		hr = dev->QueryInterface(IID_IDXGIDevice1, (void**)&dxgi_dev);
-		if (FAILED(hr))
-		{
-			break;
-		}
-		hr = dxgi_dev->GetParent(IID_IDXGIAdapter1, (void**)&adapter);
-		if (FAILED(hr))
-		{
-			break;
-		}
-		hr = adapter->GetParent(IID_IDXGIFactory1, (void**)&factory);
-		if (FAILED(hr))
-		{
-			break;
-		}
-		hr = factory->QueryInterface(IID_IDXGIFactory2, (void**)&factory2);
-		if (FAILED(hr))
-		{
-			factory2 = NULL;
-		}
-		DXGI_FORMAT format = DXGI_FORMAT_R10G10B10A2_UNORM;//DXGI_FORMAT_R8G8B8A8_UNORM
-		bool flip = factory2;
-		bool bBreak = false;
-		// Return here to retry creating the swapchain
-		do {
-			if (factory2)
-			{
-				// Create a DXGI 1.2+ (Windows 8+) swap chain if possible
-				hr = create_swapchain_1_2(dev, factory2, flip, format, &swapchain);
-			}
-			else
-			{
-				// Fall back to DXGI 1.1 (Windows 7)
-				hr = create_swapchain_1_1(dev, factory, flip, format, &swapchain);
-			}
-			if (SUCCEEDED(hr))
-				break;
-
-			if (flip)
-			{
-				flip = false;
-				continue;
-			}
-			bBreak = true;
-			break;
-		} while (true);
-		if (bBreak)
-		{
-			break;
-		}
-
-		if (factory2)
-		{
-			
-		}
-		else
-		{
-			
-		}
-
-		DXGI_SWAP_CHAIN_DESC scd = { 0 };
-		swapchain->GetDesc(&scd);
-		if (scd.SwapEffect == DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL)
-		{
-			
-		}
-		else
-		{
-			
-		}
-
-		*swapchain_out = swapchain;
-		swapchain = NULL;
-		success = true;
-	} while (0);
-	if (swapchain)
-	{
-		swapchain->Release();
-		swapchain = NULL;
-	}
-	if (factory2)
-	{
-		factory2->Release();
-		factory2 = NULL;
-	}
-	if (factory)
-	{
-		factory->Release();
-		factory = NULL;
-	}
-	if (adapter)
-	{
-		adapter->Release();
-		adapter = NULL;
-	}
-	if (dxgi_dev)
-	{
-		dxgi_dev->Release();
-		dxgi_dev = NULL;
-	}
-	return success;
 }
 
 int VideoRenderFilter::GetFeatureLevels(int max_fl, int min_fl, const D3D_FEATURE_LEVEL **out)
@@ -1457,7 +1280,7 @@ bool isEqueHDR(DXGI_HDR_METADATA_HDR10 src, DXGI_HDR_METADATA_HDR10 dst)
 void VideoRenderFilter::SetSwapchainSetMetadata(CFrameSharePtr &stFrame)
 {
 
-	if (stFrame->hasDisplayMetadata && m_displayInfo.sendmetadata && m_swapChain4)
+	if (stFrame->hasDisplayMetadata && m_displayInfo.sendmetadata && m_swapChain4 && m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
 	{
 		DXGI_HDR_METADATA_HDR10  hdr10 = { 0 };
 		if (stFrame->color_trc == AVCOL_TRC_SMPTE2084 && stFrame->color_primaries == AVCOL_PRI_BT2020)
@@ -1482,7 +1305,7 @@ void VideoRenderFilter::SetSwapchainSetMetadata(CFrameSharePtr &stFrame)
 			}
 			if (true || false == isEqueHDR(hdr10, m_hdr10))
 			{
-				m_swapChain4->SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, sizeof(&hdr10), &hdr10);
+				m_swapChain4->SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, sizeof(hdr10), &hdr10);
 				m_hdr10 = hdr10;
 			}
 		}
@@ -1557,6 +1380,11 @@ void VideoRenderFilter::SelectSwapchainColorspace()
 			}
 		}
 	}
+	bool b = true;
+	if (color_spaces[best].primaries == SSMainConfiguration::instance().disprimaries)
+	{
+		b = false;
+	}
 	IDXGIOutput *dxgiOutput = NULL;
 	if (SUCCEEDED(m_swapChain->GetContainingOutput( &dxgiOutput)))
 	{
@@ -1566,6 +1394,13 @@ void VideoRenderFilter::SelectSwapchainColorspace()
 			DXGI_OUTPUT_DESC1 desc1;
 			if (SUCCEEDED(dxgiOutput6->GetDesc1( &desc1)))
 			{
+				QString strDevideName = QString::fromStdWString(desc1.DeviceName);
+				
+				SS_LOG(LOG_WARNING, "dxgiOutput6 innfo is:name is:%s, DesktopCoordinates is:let %d, top %d,right %d,bootim %d,bit is:%u, colorspace is:%d,redprimary is:%f / %f = %f,GreenPrimary is:%f / %f = %f,BluePrimary is:%f / %f = %f,WhitePoint is:%f / %f = %f, MinLuminance %f,MaxLuminance %f, MaxFullFrameLuminance%f ",
+					strDevideName.toLocal8Bit().toStdString().c_str(), desc1.DesktopCoordinates.left, desc1.DesktopCoordinates.top, desc1.DesktopCoordinates.right, desc1.DesktopCoordinates.bottom, desc1.BitsPerColor, desc1.ColorSpace, 
+					desc1.RedPrimary[0], desc1.RedPrimary[1], desc1.RedPrimary[0] / desc1.RedPrimary[1], desc1.GreenPrimary[0], desc1.GreenPrimary[1], desc1.GreenPrimary[0] / desc1.GreenPrimary[1], 
+					desc1.BluePrimary[0], desc1.BluePrimary[1], desc1.BluePrimary[0] / desc1.BluePrimary[1], desc1.WhitePoint[0], desc1.WhitePoint[1], desc1.WhitePoint[0] / desc1.WhitePoint[1], 
+					desc1.MinLuminance, desc1.MaxLuminance, desc1.MaxFullFrameLuminance);
 				const dxgi_color_space *csp = NULL;
 				for (int i = 0; color_spaces[i].name; ++i)
 				{
@@ -1577,8 +1412,12 @@ void VideoRenderFilter::SelectSwapchainColorspace()
 						}
 						else
 						{
-							best = i;
-							csp = &color_spaces[i];
+							if (b)
+							{
+								best = i;
+								csp = &color_spaces[i];
+							}
+							
 						}
 						break;
 					}
@@ -1596,6 +1435,9 @@ void VideoRenderFilter::SelectSwapchainColorspace()
 	hr = dxgiswapChain4->SetColorSpace1( color_spaces[best].dxgi);
 done:
 	m_displayInfo.dxgicolor = color_spaces[best];
+	
+
+	SS_LOG(LOG_WARNING, "Select color is:%s, ",m_displayInfo.dxgicolor.name);
 	m_displayInfo.sendmetadata = color_spaces[best].primaries == AVCOL_PRI_BT2020;
 	if (m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
 	{
@@ -1610,19 +1452,30 @@ done:
 
 bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 {
-	m_displayInfo.bitdepth = 10;
-	m_displayInfo.colorspace = AVCOL_SPC_BT2020_NCL;
-	m_displayInfo.full_range = 1;
-	m_displayInfo.primaries = AVCOL_PRI_BT2020;
-	m_displayInfo.transfer = AVCOL_TRC_SMPTEST2084;
+	if (SSMainConfiguration::instance().disprimaries == AVCOL_PRI_BT709)
+	{
+		m_displayInfo.bitdepth = 10;
+		m_displayInfo.colorspace = AVCOL_SPC_BT2020_NCL;
+		m_displayInfo.full_range = 1;
+		m_displayInfo.primaries = AVCOL_PRI_BT2020;
+		m_displayInfo.transfer = AVCOL_TRC_SMPTEST2084;
+	}
+	else
+	{
+		m_displayInfo.bitdepth = 10;
+		m_displayInfo.colorspace = AVCOL_SPC_BT709;
+		m_displayInfo.full_range = 1;
+		m_displayInfo.primaries = AVCOL_PRI_BT709;
+		m_displayInfo.transfer = AVCOL_TRC_BT709;
+	}
 	std::lock_guard<std::mutex> stLock(m_stD3DLock);
 	UINT createDeviceFlags = 0;
 	m_dstRenderDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 	m_dstBufferDXFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 #ifdef _DEBUG
-	//createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+	createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
-	//createDeviceFlags |= D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
+	createDeviceFlags |= D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
 	D3D_FEATURE_LEVEL min_level = D3D_FEATURE_LEVEL_9_1;
 	D3D_FEATURE_LEVEL max_level = D3D_FEATURE_LEVEL_11_1;
 	const D3D_FEATURE_LEVEL *levels;
@@ -1738,7 +1591,7 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 	SelectSwapchainColorspace();
 	if (m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
 	{
-		m_dstBufferDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		m_dstBufferDXFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
 	}
 	else
 	{
@@ -2606,6 +2459,10 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 		else
 		{
 			m_dstRenderDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		}
+		if (SSMainConfiguration::instance().disprimaries == AVCOL_PRI_BT709)
+		{
+			m_dstRenderDXFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 		}
 		D3D11_TEXTURE2D_DESC tex_desc;
 		ZeroMemory(&tex_desc, sizeof(tex_desc));

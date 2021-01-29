@@ -16,7 +16,8 @@ extern "C"
 extern SSMainConfiguration * g_pstMainConfig;
 SSMainConfiguration::SSMainConfiguration()
 {
-
+	disprimaries =  AVCOL_PRI_BT2020; //AVCOL_PRI_BT709;//
+	rendertransfer = AVCOL_TRC_ARIB_STD_B67;
 }
 
 

@@ -11,7 +11,7 @@ cbuffer PS_COLOR_TRANSFORM
 	float4x4 WhitePoint;
 	float4x4 Colorspace;
 	float4x4 TransPrimaries;
-	float4x4 DisTransPrimaries;
+//	float4x4 DisTransPrimaries;
 };
 int PixType;
 int sourcewidth;
@@ -144,7 +144,7 @@ return rgb*10000;
 
 float4 HLGTOLinear(float4 rgb)
 {
-	const float alpha_gain = 2000; 
+	const float alpha_gain = 1000; 
 		rgb.r = inverse_HLG(rgb.r);
 		rgb.g = inverse_HLG(rgb.g);
 		rgb.b = inverse_HLG(rgb.b);
@@ -152,6 +152,73 @@ float4 HLGTOLinear(float4 rgb)
 		float ootf_ys = alpha_gain * dot(ootf_2020, rgb);
 		return rgb * pow(ootf_ys, 0.200);
 }
+
+float4 PQToHLG(float4 rgb)
+{
+	rgb = rgb / LuminanceScale;
+	float r = min(rgb.r / 10000.0 * 10, 1.0);
+	float g = min(rgb.g  / 10000.0 * 10, 1.0);
+	float b = min(rgb.b / 10000.0 * 10, 1.0);
+	float a = min(rgb.a / 10000.0 * 10, 1.0);
+	// ootf 光光转换函数
+	float3 ootf_2020 = float3(0.2627, 0.6780, 0.0593);
+	float ootf_ys =  dot(ootf_2020, rgb);
+//	ootf_ys = pow(ootf_ys, (1.0 - 1.200) / 1.200);
+	ootf_ys = pow(ootf_ys, 0.200);
+	float hlgr = r * ootf_ys;
+	float hlgg = g * ootf_ys;
+	float hlgb = b* ootf_ys;
+	float hlga = a * ootf_ys;
+	hlgr = LineToHLG(hlgr);
+	hlgg = LineToHLG(hlgg);
+	hlgb = LineToHLG(hlgb);
+	hlga = LineToHLG(hlga);
+	return  float4(hlgr, hlgg, hlgb, hlga);
+	
+}
+
+float4 SDRToHLG(float4 rgb)
+{
+	rgb = rgb / LuminanceScale;
+	float r = min(rgb.r, 1.0);
+	float g = min(rgb.g, 1.0);
+	float b = min(rgb.b, 1.0);
+	float a = min(rgb.a, 1.0);
+	// ootf 光光转换函数
+	float3 ootf_2020 = float3(0.2627, 0.6780, 0.0593);
+	float ootf_ys = dot(ootf_2020, rgb);
+	ootf_ys = pow(ootf_ys, 0.200);
+	float hlgr = r * ootf_ys;
+	float hlgg = g * ootf_ys;
+	float hlgb = b * ootf_ys;
+	float hlga = a * ootf_ys;
+	hlgr = LineToHLG(hlgr);
+	hlgg = LineToHLG(hlgg);
+	hlgb = LineToHLG(hlgb);
+	hlga = LineToHLG(hlga);
+	return  float4(hlgr, hlgg, hlgb, hlga);
+}
+
+float4 STDB65TOLinear(float4 rgb)
+{
+	if (transfer == distransfer)
+	{
+		return rgb;
+	}
+	else
+	{
+		if (transfer == 16)
+		{
+			return PQToHLG(rgb);
+		}
+		else
+		{
+			return SDRToHLG(rgb);
+		}
+	}
+	
+}
+
 float4 BT709TOLinear(float4 rgb)
 {
 	return pow(rgb, 1.0 / 0.45);
@@ -333,7 +400,7 @@ float4 linearToDisplay(float4 rgb)
 	}
 	else if (distransfer == 18)
 	{
-		return LineTOST2084(rgb);
+		return STDB65TOLinear(rgb);
 	}
 	else if (distransfer == 1)
 	{
@@ -379,18 +446,9 @@ float4 reorderPlanes(float4 rgb)
 
 float4 RenderFloat(float4 rgb)
 { 
-	if (DrawLine == 0)
+	if (DrawLine == 1)
 	{
-		rgb = sourceToLinear(rgb);
-		rgb = transformPrimaries(rgb);
-		rgb = toneMapping(rgb);
-		rgb = linearToDisplay(rgb);
-		rgb = adjustRange(rgb);
-		rgb = reorderPlanes(rgb);
-	}
-	else if (DrawLine == 1)
-	{
-		
+		// 只进行颜色空间转换
 	}
 	else
 	{
@@ -401,7 +459,7 @@ float4 RenderFloat(float4 rgb)
 		rgb = adjustRange(rgb);
 		rgb = reorderPlanes(rgb);
 	}
-		return float4(rgb.rgb, 1); 
+	return float4(rgb.rgb, 1); 
 }
 
 inline float4 GetRGBA(VS_OUTPUT input)
@@ -455,6 +513,7 @@ inline float4 GetRGBA(VS_OUTPUT input)
 		float4 rgba = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord);
 		rgba.a = 0;
 		rgba = RenderFloat(rgba);
+		rgba.a = 1;
 		return rgba;
 	}
 	else if (4 == PixType) // bgra

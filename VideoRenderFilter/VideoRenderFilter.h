@@ -43,7 +43,7 @@ typedef struct {
 	FLOAT WhitePoint[4 * 4];
 	FLOAT Colorspace[4 * 4];
 	FLOAT Primaries[4 * 4];
-	FLOAT DisTransPrimaries[4 * 4];
+//	FLOAT DisTransPrimaries[4 * 4];
 } PS_COLOR_TRANSFORM;
  struct video_render_cfg_t
 {
