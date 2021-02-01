@@ -60,6 +60,7 @@ VideoRenderFilter::~VideoRenderFilter()
 
 float GetFormatLuminance(AVColorTransferCharacteristic srctranfunc)
 {
+	int factor = (SSMainConfiguration::instance().rendertransfer == AVCOL_TRC_SMPTE2084) ? 2 : 1;
 	switch (srctranfunc)
 	{
 	case AVCOL_TRC_SMPTE2084:
@@ -67,7 +68,7 @@ float GetFormatLuminance(AVColorTransferCharacteristic srctranfunc)
 	case AVCOL_TRC_ARIB_STD_B67:
 		return MAX_HLG_BRIGHTNESS;
 	default:
-		return DEFAULT_BRIGHTNESS;
+		return DEFAULT_BRIGHTNESS * factor;
 	}
 }
 
