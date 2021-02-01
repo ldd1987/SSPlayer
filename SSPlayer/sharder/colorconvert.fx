@@ -180,6 +180,7 @@ float4 PQToHLG(float4 rgb)
 float4 SDRToHLG(float4 rgb)
 {
 	rgb = rgb / LuminanceScale;
+	rgb = 0.265 *rgb *2;
 	float r = min(rgb.r, 1.0);
 	float g = min(rgb.g, 1.0);
 	float b = min(rgb.b, 1.0);
@@ -187,7 +188,8 @@ float4 SDRToHLG(float4 rgb)
 	// ootf 光光转换函数
 	float3 ootf_2020 = float3(0.2627, 0.6780, 0.0593);
 	float ootf_ys = dot(ootf_2020, rgb);
-	ootf_ys = pow(ootf_ys, 0.200);
+	ootf_ys = pow(ootf_ys,-0.200 / 1.200);
+	ootf_ys = 1;
 	float hlgr = r * ootf_ys;
 	float hlgg = g * ootf_ys;
 	float hlgb = b * ootf_ys;
