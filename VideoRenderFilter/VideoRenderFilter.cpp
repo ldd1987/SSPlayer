@@ -601,6 +601,14 @@ bool VideoRenderFilter::ReadData()
 	{
 		nType = 8;
 	}
+	else if (eYUV422P == stFrame->m_ePixType)
+	{
+		nType = 9;
+	}
+	else if (eYUV422P10 == stFrame->m_ePixType)
+	{
+		nType = 10;
+	}
 	else
 	{
 		nType = 2;
@@ -1856,6 +1864,36 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
 
 			}
+			else if (eYUV422P == stFrame->m_ePixType)
+			{
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_YUY2;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+
+			}
 			else if (stFrame->m_ePixType == eUYVY422)
 			{
 				int i = 0;
@@ -1997,6 +2035,36 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
 
 			}
+			else if (eYUV422P10 == stFrame->m_ePixType)
+			{
+			int i = 0;
+			D3D11_TEXTURE2D_DESC tex_desc;
+			ZeroMemory(&tex_desc, sizeof(tex_desc));
+			tex_desc.Width = stFrame->m_nWidth;
+			tex_desc.Height = stFrame->m_nHeight;
+			tex_desc.MipLevels = 1;
+			tex_desc.ArraySize = 1;
+			tex_desc.Format = DXGI_FORMAT_Y210;
+			tex_desc.SampleDesc.Count = 1;
+			tex_desc.SampleDesc.Quality = 0;
+			tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+			tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+			tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+			tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+			HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+			if (FAILED(hr))
+			{
+				return bRet;
+			}
+			D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+			ZeroMemory(&srv_desc, sizeof(srv_desc));
+			srv_desc.Format = DXGI_FORMAT_R16G16B16A16_UNORM;
+			srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+			srv_desc.Texture2D.MipLevels = 1;
+			srv_desc.Texture2D.MostDetailedMip = 0;
+			m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[0]);
+			
+			}
 			else if (eYUV420P10 == stFrame->m_ePixType)
 			{
 
@@ -2091,7 +2159,7 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				tex_desc.Height = stFrame->m_nHeight;
 				tex_desc.MipLevels = 1;
 				tex_desc.ArraySize = 1;
-				tex_desc.Format = DXGI_FORMAT_R8_UNORM;
+				tex_desc.Format = DXGI_FORMAT_NV12;
 				tex_desc.SampleDesc.Count = 1;
 				tex_desc.SampleDesc.Quality = 0;
 				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -2109,60 +2177,15 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 				srv_desc.Texture2D.MipLevels = 1;
 				srv_desc.Texture2D.MostDetailedMip = 0;
-				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
-				i++;
-			//	D3D11_TEXTURE2D_DESC tex_desc;
-				ZeroMemory(&tex_desc, sizeof(tex_desc));
-				tex_desc.Width = stFrame->m_nWidth / 2;
-				tex_desc.Height = stFrame->m_nHeight / 2;
-				tex_desc.MipLevels = 1;
-				tex_desc.ArraySize = 1;
-				tex_desc.Format = DXGI_FORMAT_R8_UNORM;
-				tex_desc.SampleDesc.Count = 1;
-				tex_desc.SampleDesc.Quality = 0;
-				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
-				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
-				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
-				if (FAILED(hr))
-				{
-					return bRet;
-				}
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[0]);
+				
 			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 				ZeroMemory(&srv_desc, sizeof(srv_desc));
-				srv_desc.Format = DXGI_FORMAT_R8_UNORM;
+				srv_desc.Format = DXGI_FORMAT_R8G8_UNORM;
 				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 				srv_desc.Texture2D.MipLevels = 1;
 				srv_desc.Texture2D.MostDetailedMip = 0;
-				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
-
-				i++;
-			//	D3D11_TEXTURE2D_DESC tex_desc;
-				ZeroMemory(&tex_desc, sizeof(tex_desc));
-				tex_desc.Width = stFrame->m_nWidth / 2;
-				tex_desc.Height = stFrame->m_nHeight / 2;
-				tex_desc.MipLevels = 1;
-				tex_desc.ArraySize = 1;
-				tex_desc.Format = DXGI_FORMAT_R8_UNORM;
-				tex_desc.SampleDesc.Count = 1;
-				tex_desc.SampleDesc.Quality = 0;
-				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
-				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
-				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
-				if (FAILED(hr))
-				{
-					return bRet;
-				}
-			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
-				ZeroMemory(&srv_desc, sizeof(srv_desc));
-				srv_desc.Format = DXGI_FORMAT_R8_UNORM;
-				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-				srv_desc.Texture2D.MipLevels = 1;
-				srv_desc.Texture2D.MostDetailedMip = 0;
-				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[1]);
 			}
 			m_nLastHeight = stFrame->m_nHeight;
 			m_nLastWidth = stFrame->m_nWidth;
@@ -2265,6 +2288,88 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 			}
 			m_deviceContext->Unmap(m_pSourceTexture2d[0], 0);
 		}
+		else  if (eYUV422P == stFrame->m_ePixType)
+		{
+			D3D11_MAPPED_SUBRESOURCE MappedResource;
+			HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[0], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
+			if (FAILED(hr))
+				return bRet;
+			byte *pRow = (BYTE *)MappedResource.pData;;
+			int yindex = 0; 
+			int uindex = 0;
+			int vindex = 0;
+			unsigned char *pDataY = pFrameData;
+			unsigned char *pDataU = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight;
+			unsigned char *pDataV = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight *3 /2;
+			for (int i = 0; i < stFrame->m_nWidth * 2 * stFrame->m_nHeight; i++)
+			{
+				if (i % 4 == 0)
+				{
+					pRow[i] = pDataY[yindex];
+					yindex++;
+				}
+				else if (i % 4 == 1)
+				{
+					pRow[i] = pDataU[uindex];
+					uindex++;
+				}
+				else if (i % 4 == 2)
+				{
+					pRow[i] = pDataY[yindex];
+					yindex++;
+					
+				}
+				else
+				{
+					pRow[i] = pDataV[vindex];
+					vindex++;
+				}
+				
+			}
+			
+			m_deviceContext->Unmap(m_pSourceTexture2d[0], 0);
+		}
+		else if (eYUV422P10 == stFrame->m_ePixType)
+		{
+		D3D11_MAPPED_SUBRESOURCE MappedResource;
+		HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[0], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
+		if (FAILED(hr))
+			return bRet;
+		WORD *pRow = (WORD *)MappedResource.pData;;
+		int yindex = 0;
+		int uindex = 0;
+		int vindex = 0;
+		unsigned short *pDataY = (unsigned short *)pFrameData;
+		unsigned short *pDataU =( unsigned short *)(pFrameData + stFrame->m_nWidth *2 * stFrame->m_nHeight);
+		unsigned short *pDataV = (unsigned short *)(pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 3) ;
+		for (int i = 0; i < stFrame->m_nWidth * 2 * stFrame->m_nHeight; i++)
+		{
+			if (i % 4 == 0)
+			{
+				pRow[i] = pDataY[yindex];
+				yindex++;
+			}
+			else if (i % 4 == 1)
+			{
+				pRow[i] = pDataU[uindex];
+				uindex++;
+			}
+			else if (i % 4 == 2)
+			{
+				pRow[i] = pDataY[yindex];
+				yindex++;
+
+			}
+			else
+			{
+				pRow[i] = pDataV[vindex];
+				vindex++;
+			}
+
+		}
+
+		m_deviceContext->Unmap(m_pSourceTexture2d[0], 0);
+		}
 		else if (stFrame->m_ePixType == eYUYV422)
 		{
 			D3D11_MAPPED_SUBRESOURCE MappedResource;
@@ -2358,17 +2463,15 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 		{
 		
 
-		D3D11_MAPPED_SUBRESOURCE MappedResource[3];
-		BYTE* pRow[3];
-		int nStrideY[3];
-		for (int i = 0; i < 3; i++)
-		{
-			HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[i], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource[i]);
+		D3D11_MAPPED_SUBRESOURCE MappedResource;
+		BYTE* pRow;
+		int nStrideY;
+		
+			HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[0], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
 			if (FAILED(hr))
 				return bRet;
-			pRow[i] = (BYTE*)MappedResource[i].pData;
-			nStrideY[i] = MappedResource[i].RowPitch;
-		}
+			pRow = (BYTE*)MappedResource.pData;
+			nStrideY = MappedResource.RowPitch;
 		unsigned char *pYsrc = NULL;
 		unsigned char *pUsrc = NULL;
 		unsigned char *pVsrc = NULL;
@@ -2376,22 +2479,20 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 		pYsrc = pFrameData;
 		pUsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight;
 		pVsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 5 / 4;
-
-		for (int i = 0; i < stFrame->m_nHeight; i++)
-		{
-			memcpy(pRow[0] + i * nStrideY[0], pYsrc + i * linesize[0], stFrame->m_nWidth);
-		}
-		for (int i = 0; i < stFrame->m_nHeight / 2; i++)
-		{
-				memcpy(pRow[1] + nStrideY[1]  * i , pUsrc + i * linesize[1], stFrame->m_nWidth/2);
-				memcpy(pRow[2] + nStrideY[2]  * i , pVsrc + i * linesize[2], stFrame->m_nWidth/2);
-		}
-
 		
-		for (int i = 0; i < 3; i++)
+		memcpy(pRow, pYsrc, stFrame->m_nWidth * stFrame->m_nHeight);
+		for (int i = 0; i < stFrame->m_nWidth * stFrame->m_nHeight / 2; i++)
 		{
-			m_deviceContext->Unmap(m_pSourceTexture2d[i], 0);
+			if (i % 2 == 0)
+			{
+				pRow[stFrame->m_nWidth * stFrame->m_nHeight + i] = pUsrc[i / 2];
+			}
+			else
+			{
+				pRow[stFrame->m_nWidth * stFrame->m_nHeight + i] = pVsrc[i / 2];
+			}
 		}
+		m_deviceContext->Unmap(m_pSourceTexture2d[0], 0);
 		}
 		bRet = true;
 		 UpdateBuffers(m_vertexBuffer, stFrame->m_nWidth, stFrame->m_nHeight, m_nTextureWidth, m_nTextureHeight);

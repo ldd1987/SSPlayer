@@ -55,6 +55,13 @@ inline float4 PSPlanar420_Reverse(VS_OUTPUT vert_in)
 	return float4(y,u,v,1.0);
 }
 
+inline float4 PSPlanar420_ReverseDX11(VS_OUTPUT vert_in)
+{
+	float y = TextureSourceY.Sample(SamplerDiffuse, vert_in.TexCoord).r;
+	float2 uv = TextureSourceU.Sample(SamplerDiffuse, vert_in.TexCoord).rg;
+	return float4(y, uv, 1.0);
+}
+
 inline float4 PSPlanar42010_Reverse(VS_OUTPUT vert_in)
 {
 	float y = TextureSourceY.Sample(SamplerDiffuse, vert_in.TexCoord).r * 64;
@@ -292,9 +299,23 @@ float4 RenderFloat(float4 rgb)
 	}
 	return float4(rgb.rgb, a); 
 }
+// yuyv 
 inline float4 PSPacked422_Reverse(VS_OUTPUT input)
 {
-	return float4(0, 1, 0, 0);
+	float y0 = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord).x;
+	float u0 = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord).y;
+	float v0 = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord).a;
+
+	return float4(y0, u0, v0, 1);
+}
+
+inline float4 PSPacked422_Reverse10(VS_OUTPUT input)
+{
+	float y0 = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord).x *64;
+	float u0 = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord).y*64;
+	float v0 = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord).a*64;
+
+	return float4(y0, u0, v0, 1);
 }
 
 inline float4 GetRGBA(VS_OUTPUT input)
@@ -329,7 +350,7 @@ inline float4 GetRGBA(VS_OUTPUT input)
 	}
 	else if (2 == PixType)
 	{
-		float4 rgba = PSPlanar420_Reverse(input);
+		float4 rgba = PSPlanar420_ReverseDX11(input);
 		float4 rr = mul(rgba, WhitePoint);
 		float4 rgbarsp = max(mul(rr, yuv2rgbmatrix), 0);
 		float	rgbarsp1 = RenderFloat(rgbarsp);
@@ -359,6 +380,26 @@ inline float4 GetRGBA(VS_OUTPUT input)
 	else if (8 == PixType)
 	{
 		float4 rgba = PSPlanar42010_Reverse(input);
+		float4 rgbasub = rgba;// -bt709yuv;
+		float4 rr = mul(rgba, WhitePoint);
+		float4 rgbarsp = max(mul(rr, yuv2rgbmatrix), 0);
+		rgbarsp = RenderFloat(rgbarsp);
+		rgbarsp.a = 1;
+		return rgbarsp;
+	}
+	else if (9 == PixType)
+	{
+		float4 rgba = PSPacked422_Reverse(input);
+		float4 rgbasub = rgba;// -bt709yuv;
+		float4 rr = mul(rgba, WhitePoint);
+		float4 rgbarsp = max(mul(rr, yuv2rgbmatrix), 0);
+		rgbarsp = RenderFloat(rgbarsp);
+		rgbarsp.a = 1;
+		return rgbarsp;
+	}
+	else if (10 == PixType)
+	{
+		float4 rgba = PSPacked422_Reverse10(input);
 		float4 rgbasub = rgba;// -bt709yuv;
 		float4 rr = mul(rgba, WhitePoint);
 		float4 rgbarsp = max(mul(rr, yuv2rgbmatrix), 0);

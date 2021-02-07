@@ -455,7 +455,123 @@ void CInputFileSource::DecoderVideo()
 					}
 					else
 					{
-						if (m_pstDecodedVideoBuffer->format == AV_PIX_FMT_YUV420P)
+						if (AV_PIX_FMT_YUV422P10 == m_pstDecodedVideoBuffer->format)
+						{
+							CFrameSharePtr stFrame = NewShareFrame();
+							stFrame->m_nWidth = width;
+							stFrame->m_nHeight = height;
+							stFrame->m_nTimesTamp = 0;
+							stFrame->m_nLen = width *height *2 *2;
+							stFrame->m_eFrameType = eVideoFrame;
+							stFrame->m_ePixType = eYUV422P10;
+							stFrame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
+							stFrame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
+							stFrame->color_range = AVCOL_RANGE_MPEG;
+							stFrame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
+							stFrame->hasDisplayMetadata = false;
+							stFrame->hasLightMetadata = false;
+							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+							if (sd)
+							{
+								stFrame->displayMetadata = *(AVMasteringDisplayMetadata *)sd->data;
+								stFrame->hasDisplayMetadata = true;
+							}
+
+							sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+							if (sd)
+							{
+								stFrame->lightMetadata = *(AVContentLightMetadata *)sd->data;
+								stFrame->hasLightMetadata = true;
+							}
+							if (1)
+							{
+								stFrame->AllocMem(stFrame->m_nLen);
+								int a0 = 0, i;
+								int a1 = width *height * 2;
+								int a2 = width * height * 2 + width *height;
+								unsigned char *pFrameData = stFrame->GetDataPtr();
+								for (i = 0; i < height; i++)
+								{
+									memcpy(pFrameData + a0, m_pstDecodedVideoBuffer->data[0] + i * m_pstDecodedVideoBuffer->linesize[0], width*2);
+									memcpy(pFrameData + a1, m_pstDecodedVideoBuffer->data[1] + i * m_pstDecodedVideoBuffer->linesize[1], width);
+									memcpy(pFrameData + a2, m_pstDecodedVideoBuffer->data[2] + i * m_pstDecodedVideoBuffer->linesize[2], width);
+									a1 += width;
+									a2 += width;
+									a0 += width * 2;
+								}
+							}
+
+							m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
+
+							long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
+							stFrame->m_nTimesTamp = nPTS;// +2000;
+							if (m_nFirstOrgVideoPts < 0)
+							{
+								m_nFirstOrgVideoPts = nPTS;
+							}
+							m_dbVideoLastTime = nPTS;
+							stFrame->m_nShowTime = stFrame->m_nTimesTamp - m_nFirstOrgVideoPts;
+							m_ListVideo.Enqueue(stFrame);
+						}
+						else if (AV_PIX_FMT_YUV422P == m_pstDecodedVideoBuffer->format)
+						{
+							CFrameSharePtr stFrame = NewShareFrame();
+							stFrame->m_nWidth = width;
+							stFrame->m_nHeight = height;
+							stFrame->m_nTimesTamp = 0;
+							stFrame->m_nLen = width * height * 2;
+							stFrame->m_eFrameType = eVideoFrame;
+							stFrame->m_ePixType = eYUV422P;
+							stFrame->colorspace = (m_pstVideoCodecCtx->colorspace == AVCOL_PRI_UNSPECIFIED) ? AVCOL_SPC_BT709 : m_pstVideoCodecCtx->colorspace;
+							stFrame->color_primaries = m_pstVideoCodecCtx->color_primaries == AVCOL_PRI_UNSPECIFIED ? AVCOL_PRI_BT709 : m_pstVideoCodecCtx->color_primaries;;
+							stFrame->color_range = AVCOL_RANGE_MPEG;
+							stFrame->color_trc = m_pstVideoCodecCtx->color_trc == AVCOL_TRC_UNSPECIFIED ? AVCOL_TRC_BT709 : m_pstVideoCodecCtx->color_trc;;
+							stFrame->hasDisplayMetadata = false;
+							stFrame->hasLightMetadata = false;
+							AVFrameSideData *sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+							if (sd)
+							{
+								stFrame->displayMetadata = *(AVMasteringDisplayMetadata *)sd->data;
+								stFrame->hasDisplayMetadata = true;
+							}
+
+							sd = av_frame_get_side_data(m_pstDecodedVideoBuffer, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+							if (sd)
+							{
+								stFrame->lightMetadata = *(AVContentLightMetadata *)sd->data;
+								stFrame->hasLightMetadata = true;
+							}
+							if (1)
+							{
+								stFrame->AllocMem(stFrame->m_nLen);
+								int a0 = 0, i;
+								int a1 = width * height;
+								int a2 = width * height+ width * height/2;
+								unsigned char *pFrameData = stFrame->GetDataPtr();
+								for (i = 0; i < height; i++)
+								{
+									memcpy(pFrameData + a0, m_pstDecodedVideoBuffer->data[0] + i * m_pstDecodedVideoBuffer->linesize[0], width);
+									memcpy(pFrameData + a1, m_pstDecodedVideoBuffer->data[1] + i * m_pstDecodedVideoBuffer->linesize[1], width/2);
+									memcpy(pFrameData + a2, m_pstDecodedVideoBuffer->data[2] + i * m_pstDecodedVideoBuffer->linesize[2], width/2);
+									a1 += width/2;
+									a2 += width/2;
+									a0 += width;
+								}
+							}
+
+							m_pstDecodedVideoBuffer->pts = av_frame_get_best_effort_timestamp(m_pstDecodedVideoBuffer);
+
+							long long nPTS = av_q2d(m_pstFmtCtx->streams[m_nVideoIndex]->time_base) * m_pstDecodedVideoBuffer->pts * 1000LL;   //轉化成ms
+							stFrame->m_nTimesTamp = nPTS;// +2000;
+							if (m_nFirstOrgVideoPts < 0)
+							{
+								m_nFirstOrgVideoPts = nPTS;
+							}
+							m_dbVideoLastTime = nPTS;
+							stFrame->m_nShowTime = stFrame->m_nTimesTamp - m_nFirstOrgVideoPts;
+							m_ListVideo.Enqueue(stFrame);
+						}
+						else if (m_pstDecodedVideoBuffer->format == AV_PIX_FMT_YUV420P)
 						{
 							CFrameSharePtr stFrame = NewShareFrame();
 							stFrame->m_nWidth = width;
