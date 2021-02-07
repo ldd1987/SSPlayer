@@ -23,8 +23,8 @@ private:
 
 	QAction * m_pVedioFileInputAct;
 
-	CInputFileSource *m_pInputSourceFilter[2];
-	VideoRenderFilter *m_pVideoRenderFilter[3];
+	CInputFileSource *m_pInputSourceFilter;
+	VideoRenderFilter *m_pVideoRenderFilter;
 	AudioRenderFilter *m_pAudioRenderFilter;
 	int m_nIndex = 0;
 };

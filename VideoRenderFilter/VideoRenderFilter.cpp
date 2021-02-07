@@ -293,16 +293,7 @@ void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries d
 		for (int i = 0; i < 16; i++)
 		{
 			m_pixtransform.Primaries[i] = Primaries[i];
-		}
-
-		/*GetPrimariesTransform(Primaries, m_colPrimariesDst,m_colPrimariesSrc);
-		for (int i = 0; i < 16; i++)
-		{
-			m_pixtransform.DisTransPrimaries[i] = Primaries[i];
-		}*/
-
-		
-		
+		}	
 	}
 	bool bRGB = IsRGB(stFrame);
 	{
@@ -424,8 +415,6 @@ void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries d
 }
 VideoRenderFilter::VideoRenderFilter(long index, QWidget*  parent, std::string &strName, bool bdirect) : CSSFilter(strName)
 {
-	m_nIndex = index;
-	m_bDirect = bdirect;
 	m_alphaEnableBlendingState = NULL;
 	m_alphaDisableBlendingState = NULL;
 	m_swapChain = 0;
@@ -433,9 +422,6 @@ VideoRenderFilter::VideoRenderFilter(long index, QWidget*  parent, std::string &
 	m_device = 0;
 	m_deviceContext = 0;
 	m_renderTargetView = 0;
-	m_textureText = NULL;
-	m_texture2dText = NULL;
-	m_renderTextureTargetView = NULL;
 	m_indexBuffer = NULL;
 	m_vertexBuffer = NULL;
 	m_vertexBufferSource = NULL;
@@ -446,12 +432,6 @@ VideoRenderFilter::VideoRenderFilter(long index, QWidget*  parent, std::string &
 	{
 		m_pSourceTexture2d[i] = NULL;
 		m_pSourceTexture[i] = NULL;
-	}
-	for (int i = 0; i < 3; i++)
-	{
-		 m_hSrcHandle[i]=0;
-		 m_texture2dpip[i]=0;
-		 m_texturepip[i]=0;
 	}
 
 	m_nLastWidth = 0;
@@ -496,65 +476,6 @@ int VideoRenderFilter::InputData(CFrameSharePtr &frame)
 	return 0;
 }
 
-void VideoRenderFilter::RenderToWindow(bool bDirect)
-{
-	XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-	// renderto  backbuffer
-	if (m_bRendUpdate)
-	{
-		m_pWidget->setAttribute(Qt::WA_OpaquePaintEvent);
-		m_pWidget->setUpdatesEnabled(false);
-		m_bRendUpdate = false;
-	}
-	m_deviceContext->OMSetRenderTargets(1, &m_renderTargetView, NULL);
-	m_deviceContext->RSSetViewports(1, &viewport);
-	BeginScene(0.0f, 0.0f, 0.0f, 1.0f, m_renderTargetView, NULL);
-	RenderBuffers(m_vertexBuffer);
-	XMFLOAT4X4 viewwindows;
-	viewwindows.m[0][0] = 2.0f / m_nTextureWidth;
-	viewwindows.m[0][1] = 0.0f;
-	viewwindows.m[0][2] = 0.0f;
-	viewwindows.m[0][3] = 0.0f;
-	viewwindows.m[1][0] = 0.0f;
-	viewwindows.m[1][1] = -2.0f / m_nTextureHeight;
-	viewwindows.m[1][2] = 0.0f;
-	viewwindows.m[1][3] = 0.0f;
-	viewwindows.m[2][0] = 0.0f;
-	viewwindows.m[2][1] = 0.0f;
-	viewwindows.m[2][2] = 1.0f;
-	viewwindows.m[2][3] = 0.0f;
-	viewwindows.m[3][0] = -1.0f;
-	viewwindows.m[3][1] = 1.0f;
-	viewwindows.m[3][2] = 0.0f;
-	viewwindows.m[3][3] = 1.0f;
-	viewMatrix = XMLoadFloat4x4(&viewwindows);
-	m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-	if (bDirect)
-	{
-
-	}
-	else
-	{
-
-	}
-	m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_textureText);
-	m_pType->SetInt(1);
-	m_ptransfer->SetInt(m_displayInfo.dxgicolor.transfer);
-	m_pdistransfer->SetInt(m_displayInfo.dxgicolor.transfer);
-	m_pprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
-	m_pdisprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
-	m_pfullrange->SetInt(1);
-	m_psrcrange->SetInt(1);
-	m_deviceContext->IASetInputLayout(m_layout);
-	D3DX11_TECHNIQUE_DESC techDescwindow;
-	m_pTech->GetDesc(&techDescwindow);
-	for (UINT i = 0; i < techDescwindow.Passes; ++i)
-	{
-		m_pTech->GetPassByIndex(i)->Apply(0, m_deviceContext);
-		m_deviceContext->DrawIndexed(m_indexCount, 0, 0);
-	}
-	EndScene();
-}
 
 void VideoRenderFilter::UpdateBackBuffer()
 {
@@ -711,72 +632,6 @@ bool VideoRenderFilter::ReadData()
 	int srcrange = 1;
 
 	XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-
-	// render to texture
-	if (!m_bDirect)
-	{
-		m_deviceContext->OMSetRenderTargets(1, &m_renderTextureTargetView, NULL);
-		m_deviceContext->RSSetViewports(1, &viewportframe);
-		BeginScene(0.0f, 0.0f, 0.0f, 1.0f, m_renderTextureTargetView, NULL);
-		RenderBuffers(m_vertexBufferSource);
-		XMFLOAT4X4 view;
-		view.m[0][0] = 2.0f / stFrame->m_nWidth;
-		view.m[0][1] = 0.0f;
-		view.m[0][2] = 0.0f;
-		view.m[0][3] = 0.0f;
-		view.m[1][0] = 0.0f;
-		view.m[1][1] = -2.0f / stFrame->m_nHeight;
-		view.m[1][2] = 0.0f;
-		view.m[1][3] = 0.0f;
-		view.m[2][0] = 0.0f;
-		view.m[2][1] = 0.0f;
-		view.m[2][2] = 1.0f;
-		view.m[2][3] = 0.0f;
-		view.m[3][0] = -1.0f;
-		view.m[3][1] = 1.0f;
-		view.m[3][2] = 0.0f;
-		view.m[3][3] = 1.0f;
-		viewMatrix = XMLoadFloat4x4(&view);
-		m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-		if (m_dstRenderDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
-		{
-			SetColPrimaries(stFrame->color_primaries, stFrame->color_primaries, stFrame->color_trc, stFrame->color_trc, stFrame);
-			m_pdistransfer->SetInt(AVCOL_TRC_SMPTE2084);
-			m_pdisprimaries->SetInt(AVCOL_PRI_BT2020);
-		}
-		else
-		{
-			SetColPrimaries(stFrame->color_primaries, stFrame->color_primaries, stFrame->color_trc, stFrame->color_trc, stFrame);
-			m_pdistransfer->SetInt(AVCOL_TRC_BT709);
-			m_pdisprimaries->SetInt(AVCOL_PRI_BT709);
-		}
-		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
-		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
-		m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
-		m_pTextSourceA->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[3]);
-		m_pType->SetInt(nType);
-		m_pSourceHeight->SetInt(stFrame->m_nHeight);
-		m_pSourceWidth->SetInt(stFrame->m_nWidth);
-		m_ptransfer->SetInt(transfer);
-		m_pprimaries->SetInt(primaries);
-		m_pfullrange->SetInt(fullrange);
-		m_psrcrange->SetInt(srcrange);
-		m_pDrawLine->SetInt(1);
-		m_deviceContext->IASetInputLayout(m_layout);
-		D3DX11_TECHNIQUE_DESC techDesc;
-		m_pTech->GetDesc(&techDesc);
-		for (UINT i = 0; i < techDesc.Passes; ++i)
-		{
-			m_pTech->GetPassByIndex(i)->Apply(0, m_deviceContext);
-			m_deviceContext->DrawIndexed(m_indexCount, 0, 0);
-		}
-		m_deviceContext->CopyResource(m_texture2dShared,m_texture2dText);
-
-	}
-	ID3D11ShaderResourceView *const pSRV[3] = { NULL };
-	m_deviceContext->PSSetShaderResources(0, 3, pSRV);
-	//XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-	// renderto  backbuffer
 	if (m_bRendUpdate)
 	{
 		m_pWidget->setAttribute(Qt::WA_OpaquePaintEvent);
@@ -806,16 +661,7 @@ bool VideoRenderFilter::ReadData()
 	viewwindows.m[3][3] = 1.0f;
 	viewMatrix = XMLoadFloat4x4(&viewwindows);
 	m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-	if (false == m_bDirect)
 	{
-		if (m_dstRenderDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
-		{
-			SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
-			m_ptransfer->SetInt(stFrame->color_trc);
-			m_pprimaries->SetInt(stFrame->color_primaries);
-		}
-		else
-		{
 			if (m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
 			{
 				SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame, true);
@@ -824,35 +670,18 @@ bool VideoRenderFilter::ReadData()
 			{
 				SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
 			}
-			
 			m_ptransfer->SetInt(stFrame->color_trc);
 			m_pprimaries->SetInt(stFrame->color_primaries);
-		}
-		
-		if (0)
-		{
-			m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
-			m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
-			m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
-			m_pTextSourceA->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[3]);
-			m_pType->SetInt(nType);
-			m_pDrawLine->SetInt(2);
-		}
-		else
-		{
-			m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_textureText);
-			m_pTextSourceU->SetResource(0);
-			m_pTextSourceV->SetResource(0);
-			m_pTextSourceA->SetResource(0);
-			m_pType->SetInt(1);
-			m_pDrawLine->SetInt(0);
-		}
-		
-		
+		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
+		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
+		m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
+		m_pTextSourceA->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[3]);
+		m_pType->SetInt(nType);
+		m_pDrawLine->SetInt(2);
 		m_pSourceHeight->SetInt(stFrame->m_nHeight);
 		m_pSourceWidth->SetInt(stFrame->m_nWidth);
-		m_pdistransfer->SetInt(distransfer);
-		m_pdisprimaries->SetInt(disprimaries);
+		m_pdistransfer->SetInt(m_displayInfo.dxgicolor.transfer);
+		m_pdisprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
 		m_pfullrange->SetInt(fullrange);
 		m_psrcrange->SetInt(srcrange);
 		
@@ -865,213 +694,9 @@ bool VideoRenderFilter::ReadData()
 			m_deviceContext->DrawIndexed(m_indexCount, 0, 0);
 		}
 	}
-	
-	
 	EndScene();
-	m_deviceContext->PSSetShaderResources(0, 1, pSRV);
-	return bRet;
-}
-
-bool VideoRenderFilter::ReadDataPGM()
-{
-	bool bRet = false;
-	long long nNow = QkTimer::now();
-	UpdateBackBuffer();
-	int nType = 0;
-	TurnOnAlphaBlending();
-	CFrameSharePtr stFrame = NewShareFrame();
-	stFrame->m_nWidth = m_nTextureWidth;
-	stFrame->m_nHeight = m_nTextureHeight;
-	stFrame->m_nPixBits = 10;
-	stFrame->colorspace = AVCOL_SPC_BT2020_NCL;
-	stFrame->color_trc = AVCOL_TRC_SMPTE2084;
-	stFrame->color_primaries = AVCOL_PRI_BT2020;
-	stFrame->m_ePixType = eBGRA;
-	ResetD3DResource(stFrame);
-	 UpdateBuffers(m_vertexBuffer, stFrame->m_nWidth, stFrame->m_nHeight, m_nTextureWidth, m_nTextureHeight);
-	
-	SetSwapchainSetMetadata(stFrame);
-	int fullrange = 1;
-	int srcrange = 1;
-
-	XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-	AVColorTransferCharacteristic rendertranfer = SSMainConfiguration::instance().rendertransfer;
-	// render to texture
-	if (m_bDirect)
-	{
-		
-		m_deviceContext->OMSetRenderTargets(1, &m_renderTextureTargetView, NULL);
-		m_deviceContext->RSSetViewports(1, &viewportframe);
-		BeginScene(0.0f, 0.0f, 0.0f, 1.0f, m_renderTextureTargetView, NULL);
-		for (int i = 1; i <= 3; i++)
-		{
-			CChannelD3DTextureInfo info = SSMainConfiguration::instance().GetTextInfo(i);
-			if (info.m_pHandle == 0 || info.m_nHeight <= 0 || info.m_nWidth <= 0)
-			{
-				continue;
-			}
-			 if (info.m_pHandle != m_hSrcHandle[i])
-			{
-				if (m_texture2dpip[i])
-				{
-					m_texture2dpip[i]->Release();
-					m_texture2dpip[i] = NULL;
-				}
-				if (m_texturepip[i])
-				{
-					m_texturepip[i]->Release();
-					m_texturepip[i] = NULL;
-				}
-				m_hSrcHandle[i] = info.m_pHandle;
-				HRESULT hr = m_device->OpenSharedResource(m_hSrcHandle[i], __uuidof(ID3D11Texture2D), (void**)(&m_texture2dpip[i]));
-				if (hr != S_OK)
-				{
-					continue;
-				}
-				D3D11_TEXTURE2D_DESC desc;
-				m_texture2dpip[i]->GetDesc(&desc);
-				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
-				ZeroMemory(&srv_desc, sizeof(srv_desc));
-				srv_desc.Format = desc.Format;
-				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-				srv_desc.Texture2D.MipLevels = 1;
-				srv_desc.Texture2D.MostDetailedMip = 0;
-				m_device->CreateShaderResourceView(m_texture2dpip[i], &srv_desc, &m_texturepip[i]);
-			}
-			CD3D11_RECT dst = CD3D11_RECT((i - 1) * 200, 0, (i - 1) * 200 + 200, 0 + 100);
-			dst = CD3D11_RECT(0, 0, stFrame->m_nWidth, stFrame->m_nHeight);
-			bool result = UpdateBuffersEx(m_vertexBufferSource, info.m_nHeight, info.m_nHeight, dst);
-			
-			RenderBuffers(m_vertexBufferSource);
-			XMFLOAT4X4 view;
-			view.m[0][0] = 2.0f / stFrame->m_nWidth;
-			view.m[0][1] = 0.0f;
-			view.m[0][2] = 0.0f;
-			view.m[0][3] = 0.0f;
-			view.m[1][0] = 0.0f;
-			view.m[1][1] = -2.0f / stFrame->m_nHeight;
-			view.m[1][2] = 0.0f;
-			view.m[1][3] = 0.0f;
-			view.m[2][0] = 0.0f;
-			view.m[2][1] = 0.0f;
-			view.m[2][2] = 1.0f;
-			view.m[2][3] = 0.0f;
-			view.m[3][0] = -1.0f;
-			view.m[3][1] = 1.0f;
-			view.m[3][2] = 0.0f;
-			view.m[3][3] = 1.0f;
-			viewMatrix = XMLoadFloat4x4(&view);
-			m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-			if (m_dstRenderDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
-			{
-				bool b = false;
-				if (rendertranfer == AVCOL_TRC_SMPTE2084)
-				{
-					b = true;
-				}
-				SetColPrimaries(info.primaries, AVCOL_PRI_BT2020, info.transfer, rendertranfer, stFrame, b);
-				m_pdistransfer->SetInt(rendertranfer);
-				m_pdisprimaries->SetInt(AVCOL_PRI_BT2020);
-			}
-			else
-			{
-				SetColPrimaries(info.primaries, AVCOL_PRI_BT709, info.transfer, AVCOL_TRC_BT709, stFrame);
-				m_pdistransfer->SetInt(AVCOL_TRC_BT709);
-				m_pdisprimaries->SetInt(AVCOL_PRI_BT709);
-			}
-			m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_texturepip[i]);
-			
-			m_pType->SetInt(1);
-			m_pSourceHeight->SetInt(stFrame->m_nHeight);
-			m_pSourceWidth->SetInt(stFrame->m_nWidth);
-			m_ptransfer->SetInt(info.transfer);
-			m_pprimaries->SetInt(info.primaries);
-			m_pfullrange->SetInt(fullrange);
-			m_psrcrange->SetInt(srcrange);
-			m_pDrawLine->SetInt(2);
-			m_deviceContext->IASetInputLayout(m_layout);
-			D3DX11_TECHNIQUE_DESC techDesc;
-			m_pTech->GetDesc(&techDesc);
-			for (UINT i = 0; i < techDesc.Passes; ++i)
-			{
-				m_pTech->GetPassByIndex(i)->Apply(0, m_deviceContext);
-				m_deviceContext->DrawIndexed(m_indexCount, 0, 0);
-			}
-		}
-		
-
-	}
-	
-	ID3D11ShaderResourceView *const pSRV[3] = { NULL };
-	m_deviceContext->PSSetShaderResources(0, 3, pSRV);
-	//XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-	// renderto  backbuffer
-	if (m_bRendUpdate)
-	{
-		m_pWidget->setAttribute(Qt::WA_OpaquePaintEvent);
-		m_pWidget->setUpdatesEnabled(false);
-		m_bRendUpdate = false;
-	}
-	m_deviceContext->OMSetRenderTargets(1, &m_renderTargetView, NULL);
-	m_deviceContext->RSSetViewports(1, &viewport);
-	BeginScene(0.0f, 0.0f, 0.0f, 1.0f, m_renderTargetView, NULL);
-	RenderBuffers(m_vertexBuffer);
-	XMFLOAT4X4 viewwindows;
-	viewwindows.m[0][0] = 2.0f / m_nTextureWidth;
-	viewwindows.m[0][1] = 0.0f;
-	viewwindows.m[0][2] = 0.0f;
-	viewwindows.m[0][3] = 0.0f;
-	viewwindows.m[1][0] = 0.0f;
-	viewwindows.m[1][1] = -2.0f / m_nTextureHeight;
-	viewwindows.m[1][2] = 0.0f;
-	viewwindows.m[1][3] = 0.0f;
-	viewwindows.m[2][0] = 0.0f;
-	viewwindows.m[2][1] = 0.0f;
-	viewwindows.m[2][2] = 1.0f;
-	viewwindows.m[2][3] = 0.0f;
-	viewwindows.m[3][0] = -1.0f;
-	viewwindows.m[3][1] = 1.0f;
-	viewwindows.m[3][2] = 0.0f;
-	viewwindows.m[3][3] = 1.0f;
-	viewMatrix = XMLoadFloat4x4(&viewwindows);
-	m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
-
-	{
-		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_textureText);
-		m_pTextSourceU->SetResource(0);
-		m_pTextSourceV->SetResource(0);
-		m_pTextSourceA->SetResource(0);
-		m_pType->SetInt(1);
-		if (m_dstRenderDXFormat == DXGI_FORMAT_R16G16B16A16_FLOAT)
-		{
-			m_ptransfer->SetInt(int(rendertranfer));
-			m_pprimaries->SetInt(AVCOL_PRI_BT2020);
-			SetColPrimaries(AVCOL_PRI_BT2020, m_displayInfo.dxgicolor.primaries, rendertranfer, m_displayInfo.dxgicolor.transfer, stFrame);
-		}
-		else
-		{
-			m_ptransfer->SetInt(AVCOL_TRC_BT709);
-			m_pprimaries->SetInt(AVCOL_PRI_BT709);
-			SetColPrimaries(AVCOL_PRI_BT709, m_displayInfo.dxgicolor.primaries, AVCOL_TRC_BT709, m_displayInfo.dxgicolor.transfer, stFrame);
-		}
-		m_pdistransfer->SetInt(m_displayInfo.dxgicolor.transfer);
-		m_pdisprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
-		m_pfullrange->SetInt(1);
-		m_psrcrange->SetInt(1);
-		m_pDrawLine->SetInt(2);
-		m_deviceContext->IASetInputLayout(m_layout);
-		D3DX11_TECHNIQUE_DESC techDescwindow;
-		m_pTech->GetDesc(&techDescwindow);
-		for (UINT i = 0; i < techDescwindow.Passes; ++i)
-		{
-			m_pTech->GetPassByIndex(i)->Apply(0, m_deviceContext);
-			m_deviceContext->DrawIndexed(m_indexCount, 0, 0);
-		}
-	}
-
-
-	EndScene();
-	m_deviceContext->PSSetShaderResources(0, 1, pSRV);
+	ID3D11ShaderResourceView *const pSRV[4] = { NULL };
+	m_deviceContext->PSSetShaderResources(0, 4, pSRV);
 	return bRet;
 }
 
@@ -1104,16 +729,7 @@ DWORD WINAPI VideoRenderFilter::SyncRead(LPVOID arg)
 		{
 		}
 		long long nStartTime = QkTimer::nowns();
-		bool bRet = true;
-		if (pThis->m_bDirect)
-		{
-			bRet = pThis->ReadDataPGM();
-		}
-		else
-		{
-			bRet = pThis->ReadData();
-		}
-       
+		bool bRet = pThis->ReadData();
 		if (false == bRet)
 		{
 		}
@@ -1466,7 +1082,6 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 	}
 	std::lock_guard<std::mutex> stLock(m_stD3DLock);
 	UINT createDeviceFlags = 0;
-	m_dstRenderDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 	m_dstBufferDXFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 #ifdef _DEBUG
 	createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
@@ -1857,21 +1472,6 @@ void VideoRenderFilter::Shutdown()
 		m_indexBuffer->Release();
 		m_indexBuffer = NULL;
 	}
-	if (m_renderTextureTargetView)
-	{
-		m_renderTextureTargetView->Release();
-		m_renderTextureTargetView = NULL;
-	}
-	if (m_texture2dText)
-	{
-		m_texture2dText->Release();
-		m_texture2dText = NULL;
-	}
-	if (m_textureText)
-	{
-		m_textureText->Release();
-		m_textureText = NULL;
-	}
 	
 	if (m_pEffect)
 	{
@@ -2059,6 +1659,7 @@ std::vector< DXFormatInfo> VideoRenderFilter::GetDXFormat(CFrameSharePtr &stFram
 	{
 		DXFormatInfo info;
 		info.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		info.viewformat.push_back(DXGI_FORMAT_B8G8R8A8_UNORM);
 		info.width = stFrame->m_nWidth;
 		info.height = stFrame->m_nHeight;
 		rsp.push_back(info);
@@ -2067,6 +1668,7 @@ std::vector< DXFormatInfo> VideoRenderFilter::GetDXFormat(CFrameSharePtr &stFram
 	{
 		DXFormatInfo info;
 		info.format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		info.viewformat.push_back(DXGI_FORMAT_R8G8B8A8_UNORM);
 		info.width = stFrame->m_nWidth;
 		info.height = stFrame->m_nHeight;
 		rsp.push_back(info);
@@ -2074,24 +1676,27 @@ std::vector< DXFormatInfo> VideoRenderFilter::GetDXFormat(CFrameSharePtr &stFram
 	else if (eYVYU422 == stFrame->m_ePixType)
 	{
 		DXFormatInfo info;
-		info.format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		info.width = stFrame->m_nWidth / 2;
+		info.format = DXGI_FORMAT_YUY2;
+		info.viewformat.push_back(DXGI_FORMAT_R8G8B8A8_UNORM);
+		info.width = stFrame->m_nWidth;
 		info.height = stFrame->m_nHeight;
 		rsp.push_back(info);
 	}
 	else if (stFrame->m_ePixType == eUYVY422)
 	{
 		DXFormatInfo info;
-		info.format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		info.width = stFrame->m_nWidth / 2;
+		info.format = DXGI_FORMAT_YUY2;
+		info.viewformat.push_back(DXGI_FORMAT_R8G8B8A8_UNORM);
+		info.width = stFrame->m_nWidth;
 		info.height = stFrame->m_nHeight;
 		rsp.push_back(info);
 	}
 	else if (stFrame->m_ePixType == eYUYV422)
 	{
 		DXFormatInfo info;
-		info.format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		info.width = stFrame->m_nWidth / 2;
+		info.format = DXGI_FORMAT_YUY2;
+		info.viewformat.push_back(DXGI_FORMAT_R8G8B8A8_UNORM);
+		info.width = stFrame->m_nWidth;
 		info.height = stFrame->m_nHeight;
 		rsp.push_back(info);
 	}
@@ -2099,6 +1704,7 @@ std::vector< DXFormatInfo> VideoRenderFilter::GetDXFormat(CFrameSharePtr &stFram
 	{
 		DXFormatInfo info;
 		info.format = DXGI_FORMAT_R8_UNORM;
+		info.viewformat.push_back(DXGI_FORMAT_R8_UNORM);
 		info.width = stFrame->m_nWidth;
 		info.height = stFrame->m_nHeight;
 		rsp.push_back(info);
@@ -2110,6 +1716,7 @@ std::vector< DXFormatInfo> VideoRenderFilter::GetDXFormat(CFrameSharePtr &stFram
 		
 		DXFormatInfo info;
 		info.format = DXGI_FORMAT_R16_UNORM;
+		info.viewformat.push_back(DXGI_FORMAT_R16_UNORM);
 		info.width = stFrame->m_nWidth;
 		info.height = stFrame->m_nHeight;
 		rsp.push_back(info);
@@ -2124,6 +1731,7 @@ std::vector< DXFormatInfo> VideoRenderFilter::GetDXFormat(CFrameSharePtr &stFram
 	{
 		DXFormatInfo info;
 		info.format = DXGI_FORMAT_R8_UNORM;
+		info.viewformat.push_back(DXGI_FORMAT_R8_UNORM);
 		info.width = stFrame->m_nWidth;
 		info.height = stFrame->m_nHeight;
 		rsp.push_back(info);
@@ -2157,16 +1765,17 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 					m_pSourceTexture[i] = NULL;
 				}
 			}
-			std::vector< DXFormatInfo> rsp = GetDXFormat(stFrame);
-			for (int i = 0; i < rsp.size(); i++)
+
+			if (stFrame->m_ePixType == eBGRA)
 			{
+				int i = 0;
 				D3D11_TEXTURE2D_DESC tex_desc;
 				ZeroMemory(&tex_desc, sizeof(tex_desc));
-				tex_desc.Width =rsp[i].width;
-				tex_desc.Height = rsp[i].height;
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
 				tex_desc.MipLevels = 1;
 				tex_desc.ArraySize = 1;
-				tex_desc.Format = rsp[i].format;
+				tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 				tex_desc.SampleDesc.Count = 1;
 				tex_desc.SampleDesc.Quality = 0;
 				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -2180,7 +1789,376 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				}
 				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 				ZeroMemory(&srv_desc, sizeof(srv_desc));
-				srv_desc.Format = rsp[i].format;
+				srv_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+
+			}
+			else if (eRGBA == stFrame->m_ePixType)
+			{
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+
+			}
+			else if (eYVYU422 == stFrame->m_ePixType)
+			{
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_YUY2;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+
+			}
+			else if (stFrame->m_ePixType == eUYVY422)
+			{
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_YUY2;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+			}
+			else if (stFrame->m_ePixType == eYUYV422)
+			{
+			int i = 0;
+			D3D11_TEXTURE2D_DESC tex_desc;
+			ZeroMemory(&tex_desc, sizeof(tex_desc));
+			tex_desc.Width = stFrame->m_nWidth;
+			tex_desc.Height = stFrame->m_nHeight;
+			tex_desc.MipLevels = 1;
+			tex_desc.ArraySize = 1;
+			tex_desc.Format = DXGI_FORMAT_YUY2;
+			tex_desc.SampleDesc.Count = 1;
+			tex_desc.SampleDesc.Quality = 0;
+			tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+			tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+			tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+			tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+			HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+			if (FAILED(hr))
+			{
+				return bRet;
+			}
+			D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+			ZeroMemory(&srv_desc, sizeof(srv_desc));
+			srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+			srv_desc.Texture2D.MipLevels = 1;
+			srv_desc.Texture2D.MostDetailedMip = 0;
+			m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+			}
+			else if (eBGR == stFrame->m_ePixType)
+			{
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R8_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+				i++;
+			//	D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R8_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+
+				i++;
+			//	D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R8_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+
+			}
+			else if (eYUV420P10 == stFrame->m_ePixType)
+			{
+
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R16_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R16_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+				i++;
+			//	D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth/2;
+				tex_desc.Height = stFrame->m_nHeight/2;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R16_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R16_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+
+				i++;
+			//	D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth/2;
+				tex_desc.Height = stFrame->m_nHeight/2;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R16_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R16_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+
+			}
+			else
+			{
+
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R8_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+				i++;
+			//	D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth / 2;
+				tex_desc.Height = stFrame->m_nHeight / 2;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R8_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+
+				i++;
+			//	D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth / 2;
+				tex_desc.Height = stFrame->m_nHeight / 2;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R8_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8_UNORM;
 				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 				srv_desc.Texture2D.MipLevels = 1;
 				srv_desc.Texture2D.MostDetailedMip = 0;
@@ -2432,113 +2410,6 @@ bool VideoRenderFilter::ResetD3DResource(CFrameSharePtr &stFrame)
 		viewportframe.MaxDepth = 1.0f;
 		viewportframe.TopLeftX = 0.0f;
 		viewportframe.TopLeftY = 0.0f;
-		if (m_texture2dText)
-		{
-			m_texture2dText->Release();
-			m_texture2dText = NULL;
-		}
-		if (m_textureText)
-		{
-			m_textureText->Release();
-			m_textureText = NULL;
-		}
-		if (m_renderTextureTargetView)
-		{
-			m_renderTextureTargetView->Release();
-			m_renderTextureTargetView = NULL;
-		}
-
-		if (stFrame->m_nPixBits == 8)
-		{
-			m_dstRenderDXFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-		}
-		else
-		{
-			m_dstRenderDXFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
-		}
-		if (SSMainConfiguration::instance().disprimaries == AVCOL_PRI_BT709)
-		{
-			m_dstRenderDXFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-		}
-		D3D11_TEXTURE2D_DESC tex_desc;
-		ZeroMemory(&tex_desc, sizeof(tex_desc));
-		tex_desc.Width = stFrame->m_nWidth;
-		tex_desc.Height = stFrame->m_nHeight;
-		tex_desc.MipLevels = 1;
-		tex_desc.ArraySize = 1;
-		tex_desc.Format = m_dstRenderDXFormat;
-		tex_desc.SampleDesc.Count = 1;
-		tex_desc.SampleDesc.Quality = 0;
-		tex_desc.Usage = D3D11_USAGE_DEFAULT;;
-		tex_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-		tex_desc.CPUAccessFlags = 0;
-		tex_desc.MiscFlags = 0;
-		HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_texture2dText);
-		if (FAILED(hr))
-		{
-			bRet = false;
-			return bRet;
-		}
-		D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
-		ZeroMemory(&srv_desc, sizeof(srv_desc));
-		srv_desc.Format = m_dstRenderDXFormat;
-		srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		srv_desc.Texture2D.MipLevels = 1;
-		srv_desc.Texture2D.MostDetailedMip = 0;
-		m_device->CreateShaderResourceView(m_texture2dText, &srv_desc, &m_textureText);
-		
-
-		D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
-		renderTargetViewDesc.Format = tex_desc.Format;
-		renderTargetViewDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-		renderTargetViewDesc.Texture2D.MipSlice = 0;
-		hr = m_device->CreateRenderTargetView(m_texture2dText, &renderTargetViewDesc, &m_renderTextureTargetView);
-		if (FAILED(hr))
-		{
-			bRet = false;
-			return bRet;
-		}
-		if (m_texture2dShared)
-		{
-			m_texture2dShared->Release();
-			m_texture2dShared = NULL;
-		}
-		/*D3D11_TEXTURE2D_DESC tex_desc;*/
-		ZeroMemory(&tex_desc, sizeof(tex_desc));
-		tex_desc.Width = stFrame->m_nWidth;
-		tex_desc.Height = stFrame->m_nHeight;
-		tex_desc.MipLevels = 1;
-		tex_desc.ArraySize = 1;
-		tex_desc.Format = m_dstRenderDXFormat;
-		tex_desc.SampleDesc.Count = 1;
-		tex_desc.SampleDesc.Quality = 0;
-		tex_desc.Usage = D3D11_USAGE_DEFAULT;
-		tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-		tex_desc.CPUAccessFlags = 0;
-		tex_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
-		hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_texture2dShared);
-		if (FAILED(hr))
-		{
-			return false;
-		}
-		HANDLE m_Handle = 0;
-		IDXGIResource* pOtherResource(NULL);
-		hr = m_texture2dShared->QueryInterface(__uuidof(IDXGIResource), (void**)&pOtherResource);
-		if (FAILED(hr))
-		{
-			return false;
-		}
-		pOtherResource->GetSharedHandle(&m_Handle);
-		pOtherResource->Release();
-		CChannelD3DTextureInfo info1;
-		info1.m_nHeight = stFrame->m_nWidth;
-		info1.m_nWidth = stFrame->m_nHeight;
-		info1.m_pHandle = m_Handle;
-		info1.colorspace = stFrame->colorspace;
-		info1.m_nBit = stFrame->m_nPixBits;
-		info1.primaries = stFrame->color_primaries;
-		info1.transfer = stFrame->color_trc;
-		SSMainConfiguration::instance().SetTextInfo(m_nIndex, info1);
 	}
 	return bRet;
 }

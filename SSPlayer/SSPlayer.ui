@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1990</width>
+    <width>1995</width>
     <height>1125</height>
    </rect>
   </property>
@@ -17,30 +17,10 @@
    <widget class="QWidget" name="widget" native="true">
     <property name="geometry">
      <rect>
-      <x>310</x>
-      <y>60</y>
-      <width>501</width>
-      <height>341</height>
-     </rect>
-    </property>
-   </widget>
-   <widget class="QWidget" name="widget_2" native="true">
-    <property name="geometry">
-     <rect>
-      <x>20</x>
-      <y>500</y>
-      <width>551</width>
-      <height>331</height>
-     </rect>
-    </property>
-   </widget>
-   <widget class="QWidget" name="widget_3" native="true">
-    <property name="geometry">
-     <rect>
-      <x>630</x>
-      <y>500</y>
-      <width>551</width>
-      <height>331</height>
+      <x>30</x>
+      <y>30</y>
+      <width>1181</width>
+      <height>631</height>
      </rect>
     </property>
    </widget>
@@ -50,8 +30,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1990</width>
-     <height>18</height>
+     <width>1995</width>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu">

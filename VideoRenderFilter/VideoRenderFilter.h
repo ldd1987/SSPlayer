@@ -15,6 +15,7 @@ const int MAXPLANE = 4;
 struct DXFormatInfo
 {
 	DXGI_FORMAT format;
+	std::vector< DXGI_FORMAT> viewformat;
 	int width;
 	int height;
 };
@@ -68,9 +69,7 @@ public:
 	static DWORD WINAPI  SyncRead(LPVOID arg);
 	void ResizeBackBuffer(int nWidth, int nHeight);
 	void UpdateBackBuffer();
-	void RenderToWindow(bool bDirect);
 	bool ReadData();
-	bool ReadDataPGM();
 	bool UpdateBuffersEx(ID3D11Buffer* verbuffer, int nLastWidth, int nLastHeight, CD3D11_RECT dest);
 	void SetSwapchainSetMetadata(CFrameSharePtr &stFrame);
 	void SelectSwapchainColorspace();
@@ -80,9 +79,6 @@ public:
 	void TurnOnAlphaBlending();
 	void TurnOffAlphaBlending();
 	int GetFeatureLevels(int max_fl, int min_fl, const D3D_FEATURE_LEVEL **out);
-	HRESULT create_swapchain_1_2(ID3D11Device *dev, IDXGIFactory2 *factory, bool flip, DXGI_FORMAT format, IDXGISwapChain **swapchain_out);
-	HRESULT create_swapchain_1_1(ID3D11Device *dev, IDXGIFactory1 *factory, bool flip, DXGI_FORMAT format, IDXGISwapChain **swapchain_out);
-	bool d3d11_create_swapchain(ID3D11Device *dev, IDXGISwapChain **swapchain_out);
 	bool Initialize(int, int, HWND);
 	void Shutdown();
 	void BeginScene(float, float, float, float, ID3D11RenderTargetView* renderTargetView, ID3D11DepthStencilView* depthStencilView);
@@ -108,12 +104,6 @@ private:
 	ID3D11Buffer *m_vertexBuffer, *m_indexBuffer;
 	ID3D11Buffer *m_vertexBufferSource;
 	int m_vertexCount, m_indexCount;
-	// ‰÷»æµΩŒ∆¿Ì
-	ID3D11RenderTargetView* m_renderTextureTargetView;
-	ID3D11Texture2D *m_texture2dText;
-	ID3D11Texture2D *m_texture2dShared=0;
-	ID3D11ShaderResourceView* m_textureText;
-
 	ID3D11Texture2D *m_pSourceTexture2d[MAXPLANE];
 	ID3D11ShaderResourceView* m_pSourceTexture[MAXPLANE];
 
@@ -166,10 +156,4 @@ private:
 	AVColorPrimaries m_colPrimariesSrc;
 	Primaries m_pMatPrim;
 	DXGI_FORMAT  m_dstBufferDXFormat;
-	DXGI_FORMAT  m_dstRenderDXFormat;
-	bool m_bDirect;
-	long m_nIndex;
-	HANDLE m_hSrcHandle[3];
-	ID3D11Texture2D *m_texture2dpip[3];
-	ID3D11ShaderResourceView *m_texturepip[3];
 };
