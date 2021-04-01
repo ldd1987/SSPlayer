@@ -19,6 +19,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "InputSourceFilter", "InputS
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Common", "Common\Common.vcxproj", "{3ABAA1D6-22A3-4170-9B1D-2E1CC906FDD0}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "cudahdr", "cudahdr\cudahdr.vcxproj", "{A7E0742B-D0D6-44DC-BDE1-B166BE5DC74E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -45,12 +47,16 @@ Global
 		{3ABAA1D6-22A3-4170-9B1D-2E1CC906FDD0}.Debug|x64.Build.0 = Debug|x64
 		{3ABAA1D6-22A3-4170-9B1D-2E1CC906FDD0}.Release|x64.ActiveCfg = Release|x64
 		{3ABAA1D6-22A3-4170-9B1D-2E1CC906FDD0}.Release|x64.Build.0 = Release|x64
+		{A7E0742B-D0D6-44DC-BDE1-B166BE5DC74E}.Debug|x64.ActiveCfg = Debug|x64
+		{A7E0742B-D0D6-44DC-BDE1-B166BE5DC74E}.Debug|x64.Build.0 = Debug|x64
+		{A7E0742B-D0D6-44DC-BDE1-B166BE5DC74E}.Release|x64.ActiveCfg = Release|x64
+		{A7E0742B-D0D6-44DC-BDE1-B166BE5DC74E}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {C072E008-B255-4A8C-8DA8-3424B8BBF2A7}
 		Qt5Version = 512
+		SolutionGuid = {C072E008-B255-4A8C-8DA8-3424B8BBF2A7}
 	EndGlobalSection
 EndGlobal

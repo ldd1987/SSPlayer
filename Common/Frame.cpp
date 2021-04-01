@@ -28,6 +28,12 @@ CFrame::CFrame(CFrame&frame)
 	m_nBitPerSample = frame.m_nBitPerSample;
 	m_nShowTime = frame.m_nShowTime;
 	m_nPixBits = frame.m_nPixBits;
+	color_range=frame.color_range;
+	color_primaries=frame.color_primaries;
+	color_trc = frame.color_trc;
+	colorspace = frame.colorspace;
+	hasDisplayMetadata=frame.hasDisplayMetadata;
+	hasLightMetadata = frame.hasLightMetadata;
 }
 CFrame::~CFrame()
 {

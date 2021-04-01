@@ -163,7 +163,8 @@ inline float4 hable(float4 x)
 
 float4 HDRToneMapping(float4 rgb)
 {
-	float4 HABLE_DIV = hable(11.2);
+	float4 tmp = float4(11.2, 11.2, 11.2, 11.2);
+	float4 HABLE_DIV = hable(tmp);
 	float4 rgba = hable(rgb* LuminanceScale) / HABLE_DIV;
 	return rgba;
 }
@@ -317,6 +318,14 @@ inline float4 PSPacked422_Reverse10(VS_OUTPUT input)
 
 	return float4(y0, u0, v0, 1);
 }
+inline float4 PSPackedNV1210_Reverse10(VS_OUTPUT input)
+{
+	float y0 = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord).r * 64;
+	float u0 = TextureSourceU.Sample(SamplerDiffuse, input.TexCoord).r * 64;
+	float v0 = TextureSourceU.Sample(SamplerDiffuse, input.TexCoord).g * 64;
+	return float4(y0, u0, v0, 1);
+}
+
 
 inline float4 GetRGBA(VS_OUTPUT input)
 {
@@ -400,6 +409,24 @@ inline float4 GetRGBA(VS_OUTPUT input)
 	else if (10 == PixType)
 	{
 		float4 rgba = PSPacked422_Reverse10(input);
+		float4 rgbasub = rgba;// -bt709yuv;
+		float4 rr = mul(rgba, WhitePoint);
+		float4 rgbarsp = max(mul(rr, yuv2rgbmatrix), 0);
+		rgbarsp = RenderFloat(rgbarsp);
+		rgbarsp.a = 1;
+		return rgbarsp;
+	}
+	else if (11 == PixType)
+	{
+		float4 rgba = TextureSourceY.Sample(SamplerDiffuse, input.TexCoord) * 64;
+		rgba.a = 0;
+		rgba = RenderFloat(rgba);
+		rgba.a = 1;
+		return rgba;
+	}
+	else if (12 == PixType)
+	{
+		float4 rgba = PSPackedNV1210_Reverse10(input);
 		float4 rgbasub = rgba;// -bt709yuv;
 		float4 rr = mul(rgba, WhitePoint);
 		float4 rgbarsp = max(mul(rr, yuv2rgbmatrix), 0);

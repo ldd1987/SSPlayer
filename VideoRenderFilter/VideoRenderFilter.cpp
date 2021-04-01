@@ -5,6 +5,10 @@
 #include "ConversionMatrix.h"
 #include "../Common/SSMainConfiguration.h"
 #include "../Common/SSLogger.h"
+extern "C" {
+
+#include "../cudahdr/cudahdr.h"
+}
 struct VertexType
 {
 	XMFLOAT3 position;
@@ -20,7 +24,7 @@ struct MatrixBufferType
 #define DEFAULT_SRGB_BRIGHTNESS    100
 #define MAX_HLG_BRIGHTNESS        1000
 #define MAX_PQ_BRIGHTNESS        10000
-dxgi_color_space color_spaces[]=
+dxgi_color_space color_spaces[] =
 {
 	{DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709,"DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_BT709, AVCOL_SPC_BT709,true},
 	{DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709,"DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709",COLOR_AXIS_RGB,AVCOL_PRI_BT709,AVCOL_TRC_LINEAR, AVCOL_SPC_BT709,true},
@@ -269,6 +273,10 @@ bool IsRGB(CFrameSharePtr &stFrame)
 	{
 
 	}
+	else if (stFrame->m_ePixType == eRGBA10)
+	{
+
+	}
 	else if (stFrame->m_ePixType == eBGR)
 	{
 
@@ -278,7 +286,7 @@ bool IsRGB(CFrameSharePtr &stFrame)
 		bRet = false;
 	}
 	return bRet;
-	
+
 }
 
 void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries dst, AVColorTransferCharacteristic srctranfunc, AVColorTransferCharacteristic dsttranfunc, CFrameSharePtr &stFrame, bool bvirtual)
@@ -293,7 +301,7 @@ void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries d
 		for (int i = 0; i < 16; i++)
 		{
 			m_pixtransform.Primaries[i] = Primaries[i];
-		}	
+		}
 	}
 	bool bRGB = IsRGB(stFrame);
 	{
@@ -355,6 +363,12 @@ void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries d
 			1.164383561643836f,  2.141772321429f,  0.000000000000f, 0.f,
 						   0.f,              0.f,              0.f, 1.f,
 		};
+		static const FLOAT COLORSPACE_BT2020_YUV_TO_FULL_RGBA8[4 * 4] = {
+			1.164383561643836f,  0.000000000000f,  1.678674107143f, 0.f,
+			1.164383561643836f, -0.187326f, -0.650424f, 0.f,
+			1.164383561643836f,  2.141772321429f,  0.000000000000f, 0.f,
+						   0.f,              0.f,              0.f, 1.f,
+		};
 
 		//PS_COLOR_TRANSFORM colorspace;
 
@@ -363,7 +377,7 @@ void VideoRenderFilter::SetColPrimaries(AVColorPrimaries src, AVColorPrimaries d
 		const FLOAT *ppColorspace;
 		if (bRGB)
 			ppColorspace = IDENTITY_4X4;
-		else 
+		else
 		{
 			switch (stFrame->color_primaries)
 			{
@@ -442,7 +456,7 @@ VideoRenderFilter::VideoRenderFilter(long index, QWidget*  parent, std::string &
 		m_pWidget = parent;
 		m_nTextureWidth = m_pWidget->width();
 		m_nTextureHeight = m_pWidget->height();
-	
+
 	}
 	else
 	{
@@ -483,7 +497,7 @@ void VideoRenderFilter::UpdateBackBuffer()
 	ID3D11Texture2D* backBufferPtr = NULL;
 	do
 	{
-	
+
 		ID3D11Resource *res = NULL;
 		D3D11_TEXTURE2D_DESC dsc = { 0 };
 		m_renderTargetView->GetResource(&res);
@@ -493,7 +507,7 @@ void VideoRenderFilter::UpdateBackBuffer()
 			texure2d->GetDesc(&dsc);
 			res->Release();
 		}
-		if (dsc.Width == m_nTextureWidth && dsc.Height == m_nTextureHeight && dsc.Format== m_dstBufferDXFormat)
+		if (dsc.Width == m_nTextureWidth && dsc.Height == m_nTextureHeight && dsc.Format == m_dstBufferDXFormat)
 		{
 			break;
 		}
@@ -516,7 +530,7 @@ void VideoRenderFilter::UpdateBackBuffer()
 		{
 			break;
 		}
-		
+
 		viewport.Width = (float)m_nTextureWidth;
 		viewport.Height = (float)m_nTextureHeight;
 		viewport.MinDepth = 0.0f;
@@ -559,10 +573,39 @@ bool VideoRenderFilter::ReadData()
 		return bRet;
 	}
 
+
+
+	static const FLOAT COLORSPACE_BT2020_RGBA_TO_FULL_YUV[4 * 4] = {
+			0.22495, 0.58057, 0.05078, 0.06256,
+			-0.12230,-0.31563, 0.43793, 0.50049,
+			 0.43793,-0.40271,-0.03522, 0.50049,
+			0.f,   0.f,       0.f, 1.f,
+	};
 	int nType = 0;
+	bool bcuda = true;
+	if (bcuda)
+	{
+		long long n1 = QkTimer::now();
+		SetColPrimaries(stFrame->color_primaries, stFrame->color_primaries, stFrame->color_trc, stFrame->color_trc, stFrame);
+		CFrameSharePtr stCUDAframe = CloneSharedFrame(stFrame);
+		stCUDAframe->m_nWidth = 1920;
+		stCUDAframe->m_nHeight = 1080;
+		stCUDAframe->AllocMem(stCUDAframe->m_nWidth * stCUDAframe->m_nHeight * 3);
+		stCUDAframe->m_nLen = stCUDAframe->m_nWidth * stCUDAframe->m_nHeight * 3;
+		stCUDAframe->m_ePixType = eNV12P10;
+		unsigned short *rgba = (unsigned short *)stCUDAframe->GetDataPtr();
+		unsigned short *y = (unsigned short *)stFrame->GetDataPtr();
+		unsigned short *u = (unsigned short *)(stFrame->GetDataPtr() + stFrame->m_nWidth * stFrame->m_nHeight * 2);
+		unsigned short *v = (unsigned short *)(stFrame->GetDataPtr() + stFrame->m_nWidth * stFrame->m_nHeight * 5 / 2);
+		float lumascale = GetFormatLuminance(stCUDAframe->color_trc) / GetFormatLuminance(stFrame->color_trc);
+		yuv420p10tonv12p10resize(rgba, y, u, v, m_pixtransform.Colorspace, m_pixtransform.WhitePoint, m_pixtransform.Primaries, COLORSPACE_BT2020_RGBA_TO_FULL_YUV, stFrame->m_nWidth, stFrame->m_nHeight,
+			stCUDAframe->m_nWidth, stCUDAframe->m_nHeight, stFrame->color_trc, stCUDAframe->color_trc, stFrame->color_primaries, stCUDAframe->color_primaries, lumascale);
+		stFrame = stCUDAframe;
+		long long n2 = QkTimer::now();
+		SS_LOG(LOG_WARNING, "cuda spend time is:%d ms.", n2 - n1);
+	}
 
-
-	TurnOnAlphaBlending();
+	//TurnOnAlphaBlending();
 	bool bRsp = ResetD3DResource(stFrame);
 	if (false == bRsp)
 	{
@@ -609,6 +652,14 @@ bool VideoRenderFilter::ReadData()
 	{
 		nType = 10;
 	}
+	else if (eRGBA10 == stFrame->m_ePixType)
+	{
+		nType = 11;
+	}
+	else if (eNV12P10 == stFrame->m_ePixType)
+	{
+		nType = 12;
+	}
 	else
 	{
 		nType = 2;
@@ -633,8 +684,8 @@ bool VideoRenderFilter::ReadData()
 	}
 	int distransfer = m_displayInfo.dxgicolor.transfer;
 	int primaries = primaries = stFrame->color_primaries;
-	
-	SetSwapchainSetMetadata(stFrame);
+
+	//SetSwapchainSetMetadata(stFrame);
 	int disprimaries = m_displayInfo.dxgicolor.primaries;
 	int fullrange = 1;
 	int srcrange = 1;
@@ -670,16 +721,16 @@ bool VideoRenderFilter::ReadData()
 	viewMatrix = XMLoadFloat4x4(&viewwindows);
 	m_pViewMatVar->SetMatrix(reinterpret_cast<const float*>(&viewMatrix));
 	{
-			if (m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
-			{
-				SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame, true);
-			}
-			else
-			{
-				SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
-			}
-			m_ptransfer->SetInt(stFrame->color_trc);
-			m_pprimaries->SetInt(stFrame->color_primaries);
+		if (m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
+		{
+			SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame, true);
+		}
+		else
+		{
+			SetColPrimaries(stFrame->color_primaries, m_displayInfo.dxgicolor.primaries, stFrame->color_trc, m_displayInfo.dxgicolor.transfer, stFrame);
+		}
+		m_ptransfer->SetInt(stFrame->color_trc);
+		m_pprimaries->SetInt(stFrame->color_primaries);
 		m_pTextSourceY->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[0]);
 		m_pTextSourceU->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[1]);
 		m_pTextSourceV->SetResource((ID3D11ShaderResourceView*)m_pSourceTexture[2]);
@@ -692,7 +743,7 @@ bool VideoRenderFilter::ReadData()
 		m_pdisprimaries->SetInt(m_displayInfo.dxgicolor.primaries);
 		m_pfullrange->SetInt(fullrange);
 		m_psrcrange->SetInt(srcrange);
-		
+
 		m_deviceContext->IASetInputLayout(m_layout);
 		D3DX11_TECHNIQUE_DESC techDescwindow;
 		m_pTech->GetDesc(&techDescwindow);
@@ -716,7 +767,7 @@ DWORD WINAPI VideoRenderFilter::SyncRead(LPVOID arg)
 	{
 		return -1;
 	}
-	
+
 	while (pThis->m_bExit == false)
 	{
 
@@ -727,11 +778,11 @@ DWORD WINAPI VideoRenderFilter::SyncRead(LPVOID arg)
 		}
 		else if (WAIT_TIMEOUT == dwRet)
 		{
-			
+
 		}
 		else if (WAIT_FAILED == dwRet)
 		{
-			
+
 		}
 		else
 		{
@@ -745,7 +796,7 @@ DWORD WINAPI VideoRenderFilter::SyncRead(LPVOID arg)
 		{
 			long long nEndTime = QkTimer::nowns();
 			double dbCost = nEndTime - nStartTime;
-			
+
 		}
 	}
 	return 0;
@@ -952,10 +1003,10 @@ void VideoRenderFilter::SetSwapchainSetMetadata(CFrameSharePtr &stFrame)
 				m_hdr10 = hdr10;
 			}
 		}
-		
-		
 
-		
+
+
+
 	}
 }
 
@@ -979,15 +1030,15 @@ void VideoRenderFilter::SelectSwapchainColorspace()
 	UINT support;
 	IDXGISwapChain4 *dxgiswapChain4 = NULL;
 	hr = m_swapChain->QueryInterface(IID_IDXGISwapChain4, (void **)&dxgiswapChain4);
-	if (FAILED(hr)) 
+	if (FAILED(hr))
 	{
 		goto done;
 	}
 	best = -1;
 	for (int i = 0; color_spaces[i].name; ++i)
 	{
-		hr = dxgiswapChain4->CheckColorSpaceSupport( color_spaces[i].dxgi, &support);
-		if (SUCCEEDED(hr) && support) 
+		hr = dxgiswapChain4->CheckColorSpaceSupport(color_spaces[i].dxgi, &support);
+		if (SUCCEEDED(hr) && support)
 		{
 			score = 0;
 			if (color_spaces[i].primaries == m_displayInfo.primaries)
@@ -1006,20 +1057,20 @@ void VideoRenderFilter::SelectSwapchainColorspace()
 		}
 	}
 	IDXGIOutput *dxgiOutput = NULL;
-	if (SUCCEEDED(m_swapChain->GetContainingOutput( &dxgiOutput)))
+	if (SUCCEEDED(m_swapChain->GetContainingOutput(&dxgiOutput)))
 	{
 		IDXGIOutput6 *dxgiOutput6 = NULL;
 		if (SUCCEEDED(dxgiOutput->QueryInterface((IID_IDXGIOutput6), (void **)&dxgiOutput6)))
 		{
 			DXGI_OUTPUT_DESC1 desc1;
-			if (SUCCEEDED(dxgiOutput6->GetDesc1( &desc1)))
+			if (SUCCEEDED(dxgiOutput6->GetDesc1(&desc1)))
 			{
 				QString strDevideName = QString::fromStdWString(desc1.DeviceName);
-				
+
 				SS_LOG(LOG_WARNING, "dxgiOutput6 innfo is:name is:%s, DesktopCoordinates is:let %d, top %d,right %d,bootim %d,bit is:%u, colorspace is:%d,redprimary is:%f / %f = %f,GreenPrimary is:%f / %f = %f,BluePrimary is:%f / %f = %f,WhitePoint is:%f / %f = %f, MinLuminance %f,MaxLuminance %f, MaxFullFrameLuminance%f ",
-					strDevideName.toLocal8Bit().toStdString().c_str(), desc1.DesktopCoordinates.left, desc1.DesktopCoordinates.top, desc1.DesktopCoordinates.right, desc1.DesktopCoordinates.bottom, desc1.BitsPerColor, desc1.ColorSpace, 
-					desc1.RedPrimary[0], desc1.RedPrimary[1], desc1.RedPrimary[0] / desc1.RedPrimary[1], desc1.GreenPrimary[0], desc1.GreenPrimary[1], desc1.GreenPrimary[0] / desc1.GreenPrimary[1], 
-					desc1.BluePrimary[0], desc1.BluePrimary[1], desc1.BluePrimary[0] / desc1.BluePrimary[1], desc1.WhitePoint[0], desc1.WhitePoint[1], desc1.WhitePoint[0] / desc1.WhitePoint[1], 
+					strDevideName.toLocal8Bit().toStdString().c_str(), desc1.DesktopCoordinates.left, desc1.DesktopCoordinates.top, desc1.DesktopCoordinates.right, desc1.DesktopCoordinates.bottom, desc1.BitsPerColor, desc1.ColorSpace,
+					desc1.RedPrimary[0], desc1.RedPrimary[1], desc1.RedPrimary[0] / desc1.RedPrimary[1], desc1.GreenPrimary[0], desc1.GreenPrimary[1], desc1.GreenPrimary[0] / desc1.GreenPrimary[1],
+					desc1.BluePrimary[0], desc1.BluePrimary[1], desc1.BluePrimary[0] / desc1.BluePrimary[1], desc1.WhitePoint[0], desc1.WhitePoint[1], desc1.WhitePoint[0] / desc1.WhitePoint[1],
 					desc1.MinLuminance, desc1.MaxLuminance, desc1.MaxFullFrameLuminance);
 				const dxgi_color_space *csp = NULL;
 				for (int i = 0; color_spaces[i].name; ++i)
@@ -1032,12 +1083,12 @@ void VideoRenderFilter::SelectSwapchainColorspace()
 						}
 						else
 						{
-					
+
 							{
 								best = i;
 								csp = &color_spaces[i];
 							}
-							
+
 						}
 						break;
 					}
@@ -1052,12 +1103,12 @@ void VideoRenderFilter::SelectSwapchainColorspace()
 		best = 0;
 	}
 
-	hr = dxgiswapChain4->SetColorSpace1( color_spaces[best].dxgi);
+	hr = dxgiswapChain4->SetColorSpace1(color_spaces[best].dxgi);
 done:
 	m_displayInfo.dxgicolor = color_spaces[best];
-	
 
-	SS_LOG(LOG_WARNING, "Select color is:%s, ",m_displayInfo.dxgicolor.name);
+
+	SS_LOG(LOG_WARNING, "Select color is:%s, ", m_displayInfo.dxgicolor.name);
 	m_displayInfo.sendmetadata = color_spaces[best].primaries == AVCOL_PRI_BT2020;
 	if (m_displayInfo.dxgicolor.primaries == AVCOL_PRI_BT2020)
 	{
@@ -1111,13 +1162,13 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 		&m_device, &out_feature_level, NULL);
 	if (SUCCEEDED(result))
 	{
-		
+
 	}
 	else
 	{
 		int kkk = 0;
 	}
-	
+
 	DXGI_FORMAT format = m_dstBufferDXFormat;//DXGI_FORMAT_R8G8B8A8_UNORM
 	DXGI_SWAP_CHAIN_DESC1 out;
 	memset(&out, 0, sizeof(out));
@@ -1156,7 +1207,7 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 			DXGI_OUTPUT_DESC1 desc1;
 			if (SUCCEEDED(dxgiOutput6->GetDesc1(&desc1)))
 			{
-				
+
 			}
 			dxgiOutput6->Release();
 		}
@@ -1173,13 +1224,13 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 	pDXGIDevice->GetMaximumFrameLatency(&aaa);
 	pDXGIDevice->SetMaximumFrameLatency(2);
 	pDXGIDevice->GetMaximumFrameLatency(&aaa);
-	
+
 	pDXGIDevice->Release();
 	DXGI_ADAPTER_DESC desc1;
 	result = dxgiadapter->GetDesc(&desc1);
 	if (FAILED(result))
 	{
-	
+
 		return false;
 	}
 	IDXGIFactory2 *dxgifactory;
@@ -1274,7 +1325,7 @@ bool VideoRenderFilter::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 		m_pSourceWidth = m_pEffect->GetVariableByName("sourcewidth")->AsScalar();
 		m_pSourceHeight = m_pEffect->GetVariableByName("sourceheight")->AsScalar();
 		m_pDrawLine = m_pEffect->GetVariableByName("DrawLine")->AsScalar();
-		
+
 		m_ptransfer = m_pEffect->GetVariableByName("transfer")->AsScalar();
 		m_pdistransfer = m_pEffect->GetVariableByName("distransfer")->AsScalar();
 		m_pprimaries = m_pEffect->GetVariableByName("primaries")->AsScalar();
@@ -1356,7 +1407,7 @@ bool VideoRenderFilter::InitializeBuffers(ID3D11Device* device)
 		constantInit.pSysMem = &m_pixtransform;
 		constantInit.SysMemPitch = 0;
 		constantInit.SysMemSlicePitch = 0;
-		HRESULT result = device->CreateBuffer(&constantDesc,&constantInit, &m_pixtranformBuffer);
+		HRESULT result = device->CreateBuffer(&constantDesc, &constantInit, &m_pixtranformBuffer);
 		if (FAILED(result))
 		{
 			return false;
@@ -1440,7 +1491,7 @@ bool VideoRenderFilter::InitializeBuffers(ID3D11Device* device)
 
 void VideoRenderFilter::Shutdown()
 {
-	
+
 	if (m_swapChain)
 	{
 		m_swapChain->SetFullscreenState(false, NULL);
@@ -1480,7 +1531,7 @@ void VideoRenderFilter::Shutdown()
 		m_indexBuffer->Release();
 		m_indexBuffer = NULL;
 	}
-	
+
 	if (m_pEffect)
 	{
 		m_pEffect->Release();
@@ -1504,7 +1555,7 @@ void VideoRenderFilter::Shutdown()
 			m_pSourceTexture[i] = NULL;
 		}
 	}
-	
+
 
 	if (m_alphaEnableBlendingState)
 	{
@@ -1516,7 +1567,7 @@ void VideoRenderFilter::Shutdown()
 		m_alphaDisableBlendingState->Release();
 		m_alphaDisableBlendingState = NULL;
 	}
-	
+
 	return;
 }
 
@@ -1619,7 +1670,7 @@ bool VideoRenderFilter::UpdateBuffersEx(ID3D11Buffer* verbuffer, int nLastWidth,
 	{
 		return false;
 	}
-	
+
 	float minu = 0;
 	float maxu = 1;
 	float minv = 0;
@@ -1721,7 +1772,7 @@ std::vector< DXFormatInfo> VideoRenderFilter::GetDXFormat(CFrameSharePtr &stFram
 	}
 	else if (eYUV420P10 == stFrame->m_ePixType)
 	{
-		
+
 		DXFormatInfo info;
 		info.format = DXGI_FORMAT_R16_UNORM;
 		info.viewformat.push_back(DXGI_FORMAT_R16_UNORM);
@@ -1744,10 +1795,10 @@ std::vector< DXFormatInfo> VideoRenderFilter::GetDXFormat(CFrameSharePtr &stFram
 		info.height = stFrame->m_nHeight;
 		rsp.push_back(info);
 		info.width = stFrame->m_nWidth / 2;
-		info.height = stFrame->m_nHeight/2;
+		info.height = stFrame->m_nHeight / 2;
 		rsp.push_back(info);
-		info.width = stFrame->m_nWidth/2;
-		info.height = stFrame->m_nHeight/2;
+		info.width = stFrame->m_nWidth / 2;
+		info.height = stFrame->m_nHeight / 2;
 		rsp.push_back(info);
 	}
 	return rsp;
@@ -1828,6 +1879,36 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 				ZeroMemory(&srv_desc, sizeof(srv_desc));
 				srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+
+			}
+			else if (eRGBA10 == stFrame->m_ePixType)
+			{
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R16G16B16A16_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R16G16B16A16_UNORM;
 				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 				srv_desc.Texture2D.MipLevels = 1;
 				srv_desc.Texture2D.MostDetailedMip = 0;
@@ -1925,32 +2006,32 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 			}
 			else if (stFrame->m_ePixType == eYUYV422)
 			{
-			int i = 0;
-			D3D11_TEXTURE2D_DESC tex_desc;
-			ZeroMemory(&tex_desc, sizeof(tex_desc));
-			tex_desc.Width = stFrame->m_nWidth;
-			tex_desc.Height = stFrame->m_nHeight;
-			tex_desc.MipLevels = 1;
-			tex_desc.ArraySize = 1;
-			tex_desc.Format = DXGI_FORMAT_YUY2;
-			tex_desc.SampleDesc.Count = 1;
-			tex_desc.SampleDesc.Quality = 0;
-			tex_desc.Usage = D3D11_USAGE_DYNAMIC;
-			tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-			tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-			tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
-			HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
-			if (FAILED(hr))
-			{
-				return bRet;
-			}
-			D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
-			ZeroMemory(&srv_desc, sizeof(srv_desc));
-			srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-			srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-			srv_desc.Texture2D.MipLevels = 1;
-			srv_desc.Texture2D.MostDetailedMip = 0;
-			m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_YUY2;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
 			}
 			else if (eBGR == stFrame->m_ePixType)
 			{
@@ -1981,7 +2062,7 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				srv_desc.Texture2D.MostDetailedMip = 0;
 				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
 				i++;
-			//	D3D11_TEXTURE2D_DESC tex_desc;
+				//	D3D11_TEXTURE2D_DESC tex_desc;
 				ZeroMemory(&tex_desc, sizeof(tex_desc));
 				tex_desc.Width = stFrame->m_nWidth;
 				tex_desc.Height = stFrame->m_nHeight;
@@ -1994,12 +2075,12 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
-				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
 				if (FAILED(hr))
 				{
 					return bRet;
 				}
-			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 				ZeroMemory(&srv_desc, sizeof(srv_desc));
 				srv_desc.Format = DXGI_FORMAT_R8_UNORM;
 				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
@@ -2008,7 +2089,7 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
 
 				i++;
-			//	D3D11_TEXTURE2D_DESC tex_desc;
+				//	D3D11_TEXTURE2D_DESC tex_desc;
 				ZeroMemory(&tex_desc, sizeof(tex_desc));
 				tex_desc.Width = stFrame->m_nWidth;
 				tex_desc.Height = stFrame->m_nHeight;
@@ -2021,12 +2102,12 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
-				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
 				if (FAILED(hr))
 				{
 					return bRet;
 				}
-			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 				ZeroMemory(&srv_desc, sizeof(srv_desc));
 				srv_desc.Format = DXGI_FORMAT_R8_UNORM;
 				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
@@ -2037,33 +2118,88 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 			}
 			else if (eYUV422P10 == stFrame->m_ePixType)
 			{
-			int i = 0;
-			D3D11_TEXTURE2D_DESC tex_desc;
-			ZeroMemory(&tex_desc, sizeof(tex_desc));
-			tex_desc.Width = stFrame->m_nWidth;
-			tex_desc.Height = stFrame->m_nHeight;
-			tex_desc.MipLevels = 1;
-			tex_desc.ArraySize = 1;
-			tex_desc.Format = DXGI_FORMAT_Y210;
-			tex_desc.SampleDesc.Count = 1;
-			tex_desc.SampleDesc.Quality = 0;
-			tex_desc.Usage = D3D11_USAGE_DYNAMIC;
-			tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-			tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-			tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
-			HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
-			if (FAILED(hr))
-			{
-				return bRet;
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_Y210;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R16G16B16A16_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[0]);
+
 			}
-			D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
-			ZeroMemory(&srv_desc, sizeof(srv_desc));
-			srv_desc.Format = DXGI_FORMAT_R16G16B16A16_UNORM;
-			srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-			srv_desc.Texture2D.MipLevels = 1;
-			srv_desc.Texture2D.MostDetailedMip = 0;
-			m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[0]);
-			
+			else if (eNV12P10 == stFrame->m_ePixType)
+			{
+				int i = 0;
+				D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth;
+				tex_desc.Height = stFrame->m_nHeight;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R16_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				HRESULT hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R16_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
+				i++;
+				//	D3D11_TEXTURE2D_DESC tex_desc;
+				ZeroMemory(&tex_desc, sizeof(tex_desc));
+				tex_desc.Width = stFrame->m_nWidth / 2;
+				tex_desc.Height = stFrame->m_nHeight / 2;
+				tex_desc.MipLevels = 1;
+				tex_desc.ArraySize = 1;
+				tex_desc.Format = DXGI_FORMAT_R16G16_UNORM;
+				tex_desc.SampleDesc.Count = 1;
+				tex_desc.SampleDesc.Quality = 0;
+				tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
+				hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				if (FAILED(hr))
+				{
+					return bRet;
+				}
+				//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				ZeroMemory(&srv_desc, sizeof(srv_desc));
+				srv_desc.Format = DXGI_FORMAT_R16G16_UNORM;
+				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+				srv_desc.Texture2D.MipLevels = 1;
+				srv_desc.Texture2D.MostDetailedMip = 0;
+				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
 			}
 			else if (eYUV420P10 == stFrame->m_ePixType)
 			{
@@ -2095,10 +2231,10 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				srv_desc.Texture2D.MostDetailedMip = 0;
 				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
 				i++;
-			//	D3D11_TEXTURE2D_DESC tex_desc;
+				//	D3D11_TEXTURE2D_DESC tex_desc;
 				ZeroMemory(&tex_desc, sizeof(tex_desc));
-				tex_desc.Width = stFrame->m_nWidth/2;
-				tex_desc.Height = stFrame->m_nHeight/2;
+				tex_desc.Width = stFrame->m_nWidth / 2;
+				tex_desc.Height = stFrame->m_nHeight / 2;
 				tex_desc.MipLevels = 1;
 				tex_desc.ArraySize = 1;
 				tex_desc.Format = DXGI_FORMAT_R16_UNORM;
@@ -2108,12 +2244,12 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
-				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
 				if (FAILED(hr))
 				{
 					return bRet;
 				}
-			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 				ZeroMemory(&srv_desc, sizeof(srv_desc));
 				srv_desc.Format = DXGI_FORMAT_R16_UNORM;
 				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
@@ -2122,10 +2258,10 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[i]);
 
 				i++;
-			//	D3D11_TEXTURE2D_DESC tex_desc;
+				//	D3D11_TEXTURE2D_DESC tex_desc;
 				ZeroMemory(&tex_desc, sizeof(tex_desc));
-				tex_desc.Width = stFrame->m_nWidth/2;
-				tex_desc.Height = stFrame->m_nHeight/2;
+				tex_desc.Width = stFrame->m_nWidth / 2;
+				tex_desc.Height = stFrame->m_nHeight / 2;
 				tex_desc.MipLevels = 1;
 				tex_desc.ArraySize = 1;
 				tex_desc.Format = DXGI_FORMAT_R16_UNORM;
@@ -2135,12 +2271,12 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 				tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 				tex_desc.MiscFlags = 0;// D3D11_RESOURCE_MISC_SHARED;
-				 hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
+				hr = m_device->CreateTexture2D(&tex_desc, NULL, &m_pSourceTexture2d[i]);
 				if (FAILED(hr))
 				{
 					return bRet;
 				}
-			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+				//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 				ZeroMemory(&srv_desc, sizeof(srv_desc));
 				srv_desc.Format = DXGI_FORMAT_R16_UNORM;
 				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
@@ -2178,8 +2314,8 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				srv_desc.Texture2D.MipLevels = 1;
 				srv_desc.Texture2D.MostDetailedMip = 0;
 				m_device->CreateShaderResourceView(m_pSourceTexture2d[i], &srv_desc, &m_pSourceTexture[0]);
-				
-			//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+
+				//	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
 				ZeroMemory(&srv_desc, sizeof(srv_desc));
 				srv_desc.Format = DXGI_FORMAT_R8G8_UNORM;
 				srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
@@ -2203,6 +2339,30 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 			int nStep = 0;
 			int nStep2 = 0;
 			int nRealStepWidth = stFrame->m_nWidth * 4;
+			BYTE* pRow = (BYTE*)MappedResource.pData;
+			if (MappedResource.RowPitch == nRealStepWidth)
+			{
+				memcpy(pRow, pFrameData, stFrame->m_nLen);
+			}
+			else
+			{
+				for (int j = 0; j < stFrame->m_nHeight; j++)
+				{
+					memcpy(pRow + j * MappedResource.RowPitch, pFrameData + nStep2, nRealStepWidth);
+					nStep2 += nRealStepWidth;
+				}
+			}
+			m_deviceContext->Unmap(m_pSourceTexture2d[0], 0);
+		}
+		else if (eRGBA10 == stFrame->m_ePixType)
+		{
+			D3D11_MAPPED_SUBRESOURCE MappedResource;
+			HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[0], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
+			if (FAILED(hr))
+				return bRet;
+			int nStep = 0;
+			int nStep2 = 0;
+			int nRealStepWidth = stFrame->m_nWidth * 8;
 			BYTE* pRow = (BYTE*)MappedResource.pData;
 			if (MappedResource.RowPitch == nRealStepWidth)
 			{
@@ -2295,12 +2455,12 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 			if (FAILED(hr))
 				return bRet;
 			byte *pRow = (BYTE *)MappedResource.pData;;
-			int yindex = 0; 
+			int yindex = 0;
 			int uindex = 0;
 			int vindex = 0;
 			unsigned char *pDataY = pFrameData;
 			unsigned char *pDataU = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight;
-			unsigned char *pDataV = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight *3 /2;
+			unsigned char *pDataV = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 3 / 2;
 			for (int i = 0; i < stFrame->m_nWidth * 2 * stFrame->m_nHeight; i++)
 			{
 				if (i % 4 == 0)
@@ -2317,58 +2477,58 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 				{
 					pRow[i] = pDataY[yindex];
 					yindex++;
-					
+
 				}
 				else
 				{
 					pRow[i] = pDataV[vindex];
 					vindex++;
 				}
-				
+
 			}
-			
+
 			m_deviceContext->Unmap(m_pSourceTexture2d[0], 0);
 		}
 		else if (eYUV422P10 == stFrame->m_ePixType)
 		{
-		D3D11_MAPPED_SUBRESOURCE MappedResource;
-		HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[0], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
-		if (FAILED(hr))
-			return bRet;
-		WORD *pRow = (WORD *)MappedResource.pData;;
-		int yindex = 0;
-		int uindex = 0;
-		int vindex = 0;
-		unsigned short *pDataY = (unsigned short *)pFrameData;
-		unsigned short *pDataU =( unsigned short *)(pFrameData + stFrame->m_nWidth *2 * stFrame->m_nHeight);
-		unsigned short *pDataV = (unsigned short *)(pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 3) ;
-		for (int i = 0; i < stFrame->m_nWidth * 2 * stFrame->m_nHeight; i++)
-		{
-			if (i % 4 == 0)
+			D3D11_MAPPED_SUBRESOURCE MappedResource;
+			HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[0], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
+			if (FAILED(hr))
+				return bRet;
+			WORD *pRow = (WORD *)MappedResource.pData;;
+			int yindex = 0;
+			int uindex = 0;
+			int vindex = 0;
+			unsigned short *pDataY = (unsigned short *)pFrameData;
+			unsigned short *pDataU = (unsigned short *)(pFrameData + stFrame->m_nWidth * 2 * stFrame->m_nHeight);
+			unsigned short *pDataV = (unsigned short *)(pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 3);
+			for (int i = 0; i < stFrame->m_nWidth * 2 * stFrame->m_nHeight; i++)
 			{
-				pRow[i] = pDataY[yindex];
-				yindex++;
-			}
-			else if (i % 4 == 1)
-			{
-				pRow[i] = pDataU[uindex];
-				uindex++;
-			}
-			else if (i % 4 == 2)
-			{
-				pRow[i] = pDataY[yindex];
-				yindex++;
+				if (i % 4 == 0)
+				{
+					pRow[i] = pDataY[yindex];
+					yindex++;
+				}
+				else if (i % 4 == 1)
+				{
+					pRow[i] = pDataU[uindex];
+					uindex++;
+				}
+				else if (i % 4 == 2)
+				{
+					pRow[i] = pDataY[yindex];
+					yindex++;
+
+				}
+				else
+				{
+					pRow[i] = pDataV[vindex];
+					vindex++;
+				}
 
 			}
-			else
-			{
-				pRow[i] = pDataV[vindex];
-				vindex++;
-			}
 
-		}
-
-		m_deviceContext->Unmap(m_pSourceTexture2d[0], 0);
+			m_deviceContext->Unmap(m_pSourceTexture2d[0], 0);
 		}
 		else if (stFrame->m_ePixType == eYUYV422)
 		{
@@ -2404,98 +2564,132 @@ bool VideoRenderFilter::ReadFrameDataToTexture(CFrameSharePtr &stFrame)
 					return bRet;
 				pRow[i] = (BYTE*)MappedResource[i].pData;
 			}
-			
+
 			{
 				for (int i = 0; i < stFrame->m_nWidth; i++)
 				{
 					for (int j = 0; j < stFrame->m_nHeight; j++)
 					{
-						memcpy(pRow[0] + j * MappedResource[0].RowPitch + i, pFrameData + j * stFrame->m_nWidth *3 + i, 1);
+						memcpy(pRow[0] + j * MappedResource[0].RowPitch + i, pFrameData + j * stFrame->m_nWidth * 3 + i, 1);
 						memcpy(pRow[1] + j * MappedResource[1].RowPitch + i, pFrameData + j * stFrame->m_nWidth * 3 + 1 + i, 1);
-						memcpy(pRow[2] + j * MappedResource[2].RowPitch + i, pFrameData + j * stFrame->m_nWidth * 3 + + 2+ i, 1);
+						memcpy(pRow[2] + j * MappedResource[2].RowPitch + i, pFrameData + j * stFrame->m_nWidth * 3 + +2 + i, 1);
 					}
 				}
-				
+
 			}
 			for (int i = 0; i < 3; i++)
 			{
 				m_deviceContext->Unmap(m_pSourceTexture2d[i], 0);
 			}
 		}
+		else if (eNV12P10 == stFrame->m_ePixType)
+		{
+			D3D11_MAPPED_SUBRESOURCE MappedResource[2];
+			BYTE* pRow[2];
+			int nStrideY[2];
+			for (int i = 0; i < 2; i++)
+			{
+				HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[i], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource[i]);
+				if (FAILED(hr))
+					return bRet;
+				pRow[i] = (BYTE*)MappedResource[i].pData;
+				nStrideY[i] = MappedResource[i].RowPitch;
+			}
+			unsigned char *pYsrc = NULL;
+			unsigned char *pUVsrc = NULL;
+			int linesize[2] = { stFrame->m_nWidth * 2, stFrame->m_nWidth * 2 };
+			pYsrc = pFrameData;
+			pUVsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 2;
+
+			for (int i = 0; i < stFrame->m_nHeight; i++)
+			{
+				memcpy(pRow[0] + i * nStrideY[0], pYsrc + i * linesize[0], stFrame->m_nWidth * 2);
+			}
+			for (int i = 0; i < stFrame->m_nHeight / 2; i++)
+			{
+				memcpy(pRow[1] + nStrideY[1] * i, pUVsrc + i * linesize[1], stFrame->m_nWidth * 2);
+			}
+
+
+			for (int i = 0; i < 2; i++)
+			{
+				m_deviceContext->Unmap(m_pSourceTexture2d[i], 0);
+			}
+		}
 		else if (stFrame->m_ePixType == eYUV420P10)
 		{
-		D3D11_MAPPED_SUBRESOURCE MappedResource[3];
-		BYTE* pRow[3];
-		int nStrideY[3];
-		for (int i = 0; i < 3; i++)
-		{
-			HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[i], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource[i]);
-			if (FAILED(hr))
-				return bRet;
-			pRow[i] = (BYTE*)MappedResource[i].pData;
-			nStrideY[i] = MappedResource[i].RowPitch;
-		}
-		unsigned char *pYsrc = NULL;
-		unsigned char *pUsrc = NULL;
-		unsigned char *pVsrc = NULL;
-		int linesize[3] = { stFrame->m_nWidth*2, stFrame->m_nWidth , stFrame->m_nWidth};
-		pYsrc = pFrameData;
-		pUsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight  * 2;
-		pVsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 5 / 2;
+			D3D11_MAPPED_SUBRESOURCE MappedResource[3];
+			BYTE* pRow[3];
+			int nStrideY[3];
+			for (int i = 0; i < 3; i++)
+			{
+				HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[i], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource[i]);
+				if (FAILED(hr))
+					return bRet;
+				pRow[i] = (BYTE*)MappedResource[i].pData;
+				nStrideY[i] = MappedResource[i].RowPitch;
+			}
+			unsigned char *pYsrc = NULL;
+			unsigned char *pUsrc = NULL;
+			unsigned char *pVsrc = NULL;
+			int linesize[3] = { stFrame->m_nWidth * 2, stFrame->m_nWidth , stFrame->m_nWidth };
+			pYsrc = pFrameData;
+			pUsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 2;
+			pVsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 5 / 2;
 
-		for (int i = 0; i < stFrame->m_nHeight; i++)
-		{
-			memcpy(pRow[0] + i * nStrideY[0], pYsrc + i * linesize[0], stFrame->m_nWidth*2);
-		}
-		for (int i = 0; i < stFrame->m_nHeight / 2; i++)
-		{
-			memcpy(pRow[1] + nStrideY[1] * i, pUsrc + i * linesize[1], stFrame->m_nWidth);
-			memcpy(pRow[2] + nStrideY[2] * i, pVsrc + i * linesize[2], stFrame->m_nWidth);
-		}
+			for (int i = 0; i < stFrame->m_nHeight; i++)
+			{
+				memcpy(pRow[0] + i * nStrideY[0], pYsrc + i * linesize[0], stFrame->m_nWidth * 2);
+			}
+			for (int i = 0; i < stFrame->m_nHeight / 2; i++)
+			{
+				memcpy(pRow[1] + nStrideY[1] * i, pUsrc + i * linesize[1], stFrame->m_nWidth);
+				memcpy(pRow[2] + nStrideY[2] * i, pVsrc + i * linesize[2], stFrame->m_nWidth);
+			}
 
 
-		for (int i = 0; i < 3; i++)
-		{
-			m_deviceContext->Unmap(m_pSourceTexture2d[i], 0);
-		}
+			for (int i = 0; i < 3; i++)
+			{
+				m_deviceContext->Unmap(m_pSourceTexture2d[i], 0);
+			}
 		}
 		else
 		{
-		
 
-		D3D11_MAPPED_SUBRESOURCE MappedResource;
-		BYTE* pRow;
-		int nStrideY;
-		
+
+			D3D11_MAPPED_SUBRESOURCE MappedResource;
+			BYTE* pRow;
+			int nStrideY;
+
 			HRESULT	hr = m_deviceContext->Map(m_pSourceTexture2d[0], 0, D3D11_MAP_WRITE_DISCARD, 0, &MappedResource);
 			if (FAILED(hr))
 				return bRet;
 			pRow = (BYTE*)MappedResource.pData;
 			nStrideY = MappedResource.RowPitch;
-		unsigned char *pYsrc = NULL;
-		unsigned char *pUsrc = NULL;
-		unsigned char *pVsrc = NULL;
-		int linesize[3] = { stFrame->m_nWidth, stFrame->m_nWidth / 2, stFrame->m_nWidth / 2 };
-		pYsrc = pFrameData;
-		pUsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight;
-		pVsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 5 / 4;
-		
-		memcpy(pRow, pYsrc, stFrame->m_nWidth * stFrame->m_nHeight);
-		for (int i = 0; i < stFrame->m_nWidth * stFrame->m_nHeight / 2; i++)
-		{
-			if (i % 2 == 0)
+			unsigned char *pYsrc = NULL;
+			unsigned char *pUsrc = NULL;
+			unsigned char *pVsrc = NULL;
+			int linesize[3] = { stFrame->m_nWidth, stFrame->m_nWidth / 2, stFrame->m_nWidth / 2 };
+			pYsrc = pFrameData;
+			pUsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight;
+			pVsrc = pFrameData + stFrame->m_nWidth * stFrame->m_nHeight * 5 / 4;
+
+			memcpy(pRow, pYsrc, stFrame->m_nWidth * stFrame->m_nHeight);
+			for (int i = 0; i < stFrame->m_nWidth * stFrame->m_nHeight / 2; i++)
 			{
-				pRow[stFrame->m_nWidth * stFrame->m_nHeight + i] = pUsrc[i / 2];
+				if (i % 2 == 0)
+				{
+					pRow[stFrame->m_nWidth * stFrame->m_nHeight + i] = pUsrc[i / 2];
+				}
+				else
+				{
+					pRow[stFrame->m_nWidth * stFrame->m_nHeight + i] = pVsrc[i / 2];
+				}
 			}
-			else
-			{
-				pRow[stFrame->m_nWidth * stFrame->m_nHeight + i] = pVsrc[i / 2];
-			}
-		}
-		m_deviceContext->Unmap(m_pSourceTexture2d[0], 0);
+			m_deviceContext->Unmap(m_pSourceTexture2d[0], 0);
 		}
 		bRet = true;
-		 UpdateBuffers(m_vertexBuffer, stFrame->m_nWidth, stFrame->m_nHeight, m_nTextureWidth, m_nTextureHeight);
+		UpdateBuffers(m_vertexBuffer, stFrame->m_nWidth, stFrame->m_nHeight, m_nTextureWidth, m_nTextureHeight);
 	} while (0);
 	return bRet;
 }
